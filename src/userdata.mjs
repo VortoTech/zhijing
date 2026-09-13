@@ -2,8 +2,8 @@ import {getJSON,searchOne} from './pipeline/fetch.mjs';
 import {extractItem} from './pipeline/extract.mjs';
 import {classify} from './pipeline/classify.mjs';
 
-// 知乎登录用户的收藏：开放平台 Access Secret + 用户 OAuth token（X-OAuth-Token）读取，只读、只在服务端。
-const COLLECTIONS_URL='https://developer.zhihu.com/api/v1/user/collections';
+// 知乎登录用户的数据：开放平台 Access Secret + 用户 OAuth token（X-OAuth-Token）读取，只读、只在服务端。
+const USER_API='https://developer.zhihu.com/api/v1/user/';
 export const CHECKUP_LIMIT=20;
 const SEARCH_SPACING_MS=700;
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -16,26 +16,32 @@ function safeZhihuUrl(value){
   }catch{return null;}
 }
 
-export const contentId=url=>String(url).match(/answer\/(\d+)/)?.[1]||String(url).match(/\/p\/(\d+)/)?.[1]||null;
+export const contentId=url=>String(url).match(/answer\/(\d+)/)?.[1]
+  ||String(url).match(/\/p\/(\d+)/)?.[1]
+  ||String(url).match(/\/pin\/(\d+)/)?.[1]
+  ||null;
 
-export function normalizeCollection(item){
+function normalizeItem(item,types){
   const url=safeZhihuUrl(item?.Url);
-  if(!url||!['answer','article'].includes(item.ContentType))return null;
-  const title=typeof item.Title==='string'?item.Title.replace(/\s*-\s*知乎$/,'').trim().slice(0,120):'';
+  if(!url||!types.includes(item.ContentType))return null;
+  const summary=typeof item.Summary==='string'?item.Summary.replace(/<[^>]+>/g,'').slice(0,600):'';
+  // 想法没有标题时，用正文开头当标题。
+  const title=(typeof item.Title==='string'?item.Title.replace(/\s*-\s*知乎$/,'').trim():'')||summary.trim().slice(0,40);
   if(!title)return null;
   return {
-    type:item.ContentType,url,title,
-    summary:typeof item.Summary==='string'?item.Summary.replace(/<[^>]+>/g,'').slice(0,600):'',
+    type:item.ContentType,url,title:title.slice(0,120),summary,
     likeCount:Number(item.LikeCount)||0,
     commentCount:Number(item.CommentCount)||0,
     favTime:Number(item.FavTime)||0,
     author:typeof item.Author?.Name==='string'?item.Author.Name.slice(0,40):null
   };
 }
+export const normalizeCollection=item=>normalizeItem(item,['answer','article']);
+export const normalizeContent=item=>normalizeItem(item,['answer','article','pin']);
 
-export async function fetchCollections(env,token,{request=getJSON}={}){
-  const url=new URL(COLLECTIONS_URL);
-  url.search=new URLSearchParams({Limit:'50'}).toString();
+async function fetchUserList(path,params,normalize,env,token,request){
+  const url=new URL(USER_API+path);
+  url.search=new URLSearchParams(params).toString();
   let body;
   try{
     body=await request(url,{headers:{
@@ -45,16 +51,24 @@ export async function fetchCollections(env,token,{request=getJSON}={}){
       'Content-Type':'application/json'
     }});
   }catch(error){
-    throw fail([401,403].includes(error.status)?'auth':'upstream','读取收藏失败');
+    throw fail([401,403].includes(error.status)?'auth':'upstream','读取知乎数据失败');
   }
   if(body?.Code===20001)throw fail('auth','知乎授权已失效');
-  if(body?.Code!==0||!Array.isArray(body.Data?.Items))throw fail('upstream','读取收藏失败');
-  return body.Data.Items.map(normalizeCollection).filter(Boolean);
+  if(body?.Code!==0||!Array.isArray(body.Data?.Items))throw fail('upstream','读取知乎数据失败');
+  return body.Data.Items.map(normalize).filter(Boolean);
+}
+
+// 近期收藏：用于「从收藏里挑问题」和「收藏体检」。
+export function fetchCollections(env,token,{request=getJSON}={}){
+  return fetchUserList('collections',{Limit:'50'},normalizeCollection,env,token,request);
+}
+// 本人发过的内容（回答、文章、想法）：用于「答主视角」体检。
+export function fetchContents(env,token,{request=getJSON}={}){
+  return fetchUserList('contents',{ContentType:'all',Limit:'30',Offset:'0',SortField:'ts',SortOrder:'desc'},normalizeContent,env,token,request);
 }
 
 // 授权验收：按官方 zhihu-hackathon skill 的要求，五项用户接口各读一条（创作、关注、收藏夹、收藏夹内容、近期收藏），
 // 成功 / 空数据 / 失败如实记录。只返回标题级信息。收藏夹内容依赖第一个收藏夹的 UrlToken，没有收藏夹算空数据。
-const USER_API='https://developer.zhihu.com/api/v1/user/';
 const VERIFY_CHECKS=[
   ['contents','我的创作',{ContentType:'all',Limit:'1',Offset:'0'}],
   ['followees','我的关注',{Limit:'1',Offset:'0'}],
@@ -94,19 +108,22 @@ export async function verifyUserApis(env,token,{request=getJSON}={}){
   return results;
 }
 
-// 收藏里的回答用它自己的一句话去搜：实测（60 条回答）命中约 65%，用问题标题只有约 10%。
+// 体检里的回答用它自己的一句话去搜：实测（60 条回答）命中约 65%，用问题标题只有约 10%。
 export function sentenceOf(summary){
   return (String(summary).match(/[^。！？\n]{12,}/)||[''])[0].trim().slice(0,38);
 }
 
-// 收藏体检：对上的回答拿到精选评论，走同一套异议归类与逐字校验；对不上的如实标出。
+// 体检（收藏或本人内容）：对上的内容拿到精选评论，走同一套异议归类与逐字校验；对不上的如实标出。
 export async function runCheckup(items,env,{search=searchOne,classifier=classify,spacingMs=search===searchOne?SEARCH_SPACING_MS:0}={}){
   const targets=items.slice(0,CHECKUP_LIMIT);
   const found=new Map();
-  for(const [i,item] of targets.entries()){
+  let searched=0;
+  for(const item of targets.values()){
+    const i=targets.indexOf(item);
     const id=contentId(item.url);
-    if(!id)continue;
-    if(i)await sleep(spacingMs);
+    // 原站评论数为 0 的内容不可能有人当场反驳，不去搜，直接标「还没有人评论」。
+    if(!id||item.commentCount===0)continue;
+    if(searched++)await sleep(spacingMs);
     const query=sentenceOf(item.summary)||item.title.slice(0,38);
     let raw=[];
     try{raw=await search(query,env);}
@@ -122,23 +139,23 @@ export async function runCheckup(items,env,{search=searchOne,classifier=classify
   }
 
   const withComments=[...found.values()].filter(r=>r.comments.length);
-  const topic={id:'my-collections',title:'用户收藏的多个回答（各自回答自己标题里的问题）',kind:'opinion',focusTerms:[],excerptTerms:[],queries:[],conditions:[],situationFields:[]};
+  const topic={id:'my-items',title:'用户收藏或发布的多条内容（各自回答自己标题里的问题）',kind:'opinion',focusTerms:[],excerptTerms:[],queries:[],conditions:[],situationFields:[]};
   const classified=withComments.length?await classifier(withComments,topic,env):[];
   const byId=new Map(classified.map(r=>[r.id,r]));
 
   const results=targets.map((item,i)=>{
     const record=found.get(i);
     const analysed=record?byId.get(record.id):null;
-    const status=!record?'unmatched'
+    const status=!record?(item.commentCount===0?'uncommented':'unmatched')
       :!record.comments.length?'no_comments'
       :['failed','partial'].includes(analysed?.analysis?.status)&&!analysed?.objections?.length?'incomplete'
       :analysed?.objections?.length?'pushback':'quiet';
     return {
-      title:item.title,url:item.url,author:item.author,likeCount:item.likeCount,commentCount:item.commentCount,status,
+      title:item.title,url:item.url,type:item.type,author:item.author,likeCount:item.likeCount,commentCount:item.commentCount,status,
       objections:(analysed?.objections||[]).map(o=>({type:o.type,typeLabel:o.typeLabel,commentText:o.commentText,targetClaim:o.targetClaim||''}))
     };
   });
-  const order={pushback:0,incomplete:1,quiet:2,no_comments:3,unmatched:4};
+  const order={pushback:0,incomplete:1,quiet:2,no_comments:3,unmatched:4,uncommented:5};
   results.sort((a,b)=>order[a.status]-order[b.status]);
   return {
     checked:targets.length,total:items.length,matched:found.size,withComments:withComments.length,

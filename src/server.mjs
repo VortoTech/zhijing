@@ -10,7 +10,7 @@ import {buildReadingMap,ORDERS} from './engine.mjs';
 import {normalizeQuestion,planQuestion,askTopic,widenFocus} from './ask.mjs';
 import {extractComparison} from './pipeline/compare.mjs';
 import {createOAuth,parseCookies} from './oauth.mjs';
-import {fetchCollections,runCheckup,verifyUserApis} from './userdata.mjs';
+import {fetchCollections,fetchContents,runCheckup,verifyUserApis} from './userdata.mjs';
 
 const root=new URL('../',import.meta.url);
 const topics=await loadTopics();
@@ -117,6 +117,7 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
   const extract=dependencies.extractComparison||extractComparison;
   const oauth=dependencies.oauth||createOAuth(env);
   const readCollections=dependencies.fetchCollections||fetchCollections;
+  const readContents=dependencies.fetchContents||fetchContents;
   const checkup=dependencies.runCheckup||runCheckup;
   const verify=dependencies.verifyUserApis||verifyUserApis;
   const checkups=new Map(); // 用户标识 → {expires, pending}：同一用户 15 分钟内复用体检结果
@@ -270,9 +271,12 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
           return send(res,200,{results});
         }
 
-        if(!askReady(env))return send(res,503,{error:'收藏体检暂未开放。'});
-        // 读不到资料的用户没有 uid：按会话区分，避免体检结果串到别人身上。
-        const key=user.uid||user.hashId||('sid:'+cookies.zj_sid);
+        // 体检对象：近期收藏（默认），或本人发过的内容（答主视角）。
+        let source='collections';
+        try{if((await readBody(req))?.source==='contents')source='contents';}catch{}
+        if(!askReady(env))return send(res,503,{error:'体检暂未开放。'});
+        // 读不到资料的用户没有 uid：按会话区分，避免体检结果串到别人身上；两种体检分开缓存。
+        const key=source+':'+(user.uid||user.hashId||('sid:'+cookies.zj_sid));
         const hit=checkups.get(key);
         if(hit&&Date.now()<hit.expires){
           try{return send(res,200,await hit.pending);}catch{}
@@ -282,11 +286,11 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
         inFlight++;
         const started=Date.now();
         const entry={expires:Date.now()+15*60*1000};
-        entry.pending=(async()=>checkup(await readCollections(env,token),env))();
+        entry.pending=(async()=>({...await checkup(await (source==='contents'?readContents:readCollections)(env,token),env),source}))();
         checkups.set(key,entry);
         try{
           const result=await entry.pending;
-          log(JSON.stringify({event:'checkup',durationMs:Date.now()-started,checked:result.checked,matched:result.matched,pushback:result.pushback}));
+          log(JSON.stringify({event:'checkup',source,durationMs:Date.now()-started,checked:result.checked,matched:result.matched,pushback:result.pushback}));
           return send(res,200,result);
         }catch(error){
           if(checkups.get(key)===entry)checkups.delete(key);

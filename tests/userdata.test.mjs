@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {fetchCollections,normalizeCollection,sentenceOf,runCheckup,verifyUserApis} from '../src/userdata.mjs';
+import {fetchCollections,fetchContents,normalizeCollection,normalizeContent,contentId,sentenceOf,runCheckup,verifyUserApis} from '../src/userdata.mjs';
 import {createServer} from '../src/server.mjs';
 
 const env={ZHIHU_ACCESS_SECRET:'secret-test',AI_BASE_URL:'https://example.invalid',AI_API_KEY:'k',AI_MODEL:'m',ZHIJING_ENABLE_PILOT:'1'};
@@ -42,11 +42,48 @@ test('体检：用回答里的一句话搜索，对上的才分析；有人不�
   const classifier=async records=>records.map(r=>r.id==='11'
     ?{...r,analysis:{status:'complete'},objections:[{commentIndex:0,type:'adds_condition',typeLabel:'补充适用条件',commentText:r.comments[0],targetClaim:''}]}
     :{...r,analysis:{status:'complete'},objections:[]});
-  const out=await runCheckup(items,env,{search,classifier});
-  assert.equal(queries.length,3);
-  assert.deepEqual([out.checked,out.matched,out.withComments,out.pushback],[3,2,2,1]);
-  assert.deepEqual(out.items.map(i=>i.status),['pushback','quiet','unmatched']);
+  const silent=normalizeCollection(raw('https://www.zhihu.com/question/4/answer/44',{CommentCount:0,Summary:'一条还没有人评论的回答内容。'}));
+  const out=await runCheckup([...items,silent],env,{search,classifier});
+  assert.equal(queries.length,3,'评论数为 0 的内容不去搜索');
+  assert.deepEqual([out.checked,out.matched,out.withComments,out.pushback],[4,2,2,1]);
+  assert.deepEqual(out.items.map(i=>i.status),['pushback','quiet','unmatched','uncommented']);
   assert.equal(out.items[0].objections[0].commentText,'我是 985 本科，情况不一样');
+});
+
+test('本人内容：读回答、文章和想法（想法没标题时用正文开头），过滤视频与站外链接；想法链接能取出编号',async()=>{
+  let seen;
+  const items=await fetchContents(env,'user-tok',{request:async url=>{
+    seen=String(url);
+    return {Code:0,Data:{Items:[
+      {ContentType:'pin',Url:'https://www.zhihu.com/pin/2029',Title:'',Summary:'高赞不等于适合你。你被高赞回答坑过吗？'},
+      {ContentType:'answer',Url:'https://www.zhihu.com/question/1/answer/11',Title:'考研还是工作',Summary:'看专业。'},
+      {ContentType:'zvideo',Url:'https://www.zhihu.com/zvideo/9',Title:'视频'},
+      {ContentType:'article',Url:'https://evil.example/p/1',Title:'站外'}
+    ]}};
+  }});
+  assert.match(seen,/\/api\/v1\/user\/contents\?ContentType=all/);
+  assert.deepEqual(items.map(i=>[i.type,i.title]),[['pin','高赞不等于适合你。你被高赞回答坑过吗？'],['answer','考研还是工作']]);
+  assert.equal(contentId('https://www.zhihu.com/pin/2029'),'2029');
+  assert.equal(normalizeContent({ContentType:'pin',Url:'https://www.zhihu.com/pin/1',Title:'',Summary:''}),null);
+  assert.equal(normalizeCollection({ContentType:'pin',Url:'https://www.zhihu.com/pin/1',Title:'想法'}),null);
+});
+
+test('体检接口：body 里 source=contents 时读本人内容，和收藏体检分开缓存',async()=>{
+  const calls={collections:0,contents:0};
+  const deps={
+    oauth:stubOAuth(),
+    fetchCollections:async()=>{calls.collections++;return [];},
+    fetchContents:async()=>{calls.contents++;return [];},
+    runCheckup:async items=>({checked:items.length,total:0,matched:0,withComments:0,pushback:0,items:[]})
+  };
+  await serve(createServer(env,deps),async base=>{
+    const post=body=>fetch(base+'/api/my/checkup',{method:'POST',headers:{cookie:'zj_sid=s1','content-type':'application/json'},body:JSON.stringify(body)});
+    const mine=await (await post({source:'contents'})).json();
+    assert.equal(mine.source,'contents');
+    assert.equal((await (await post({})).json()).source,'collections');
+    await post({source:'contents'});
+    assert.deepEqual(calls,{collections:1,contents:1});
+  });
 });
 
 test('授权验收：五项接口各读一条；收藏夹内容用第一个收藏夹的 UrlToken；成功、空数据、失败如实记录',async()=>{

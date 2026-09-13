@@ -166,24 +166,99 @@ function pushbackBlock(list){
     ]))
   ]);
 }
-// 核对：当场展示这句话在原回答里的位置，回答「AI 会不会编」。
-function verifyPanel(e,record){
-  return el('div',{class:'verify-panel',hidden:true},e.kind==='answer'
-    ?[context(record,e.text),el('p',{class:'note',text:'这是知乎接口返回的这条回答原文（摘要），高亮的是被引用的那一句，一字未改。完整回答请点「原文」。'})]
-    :[el('p',{class:'note',text:'这是一条读者评论，程序按编号整条取出，上面就是评论全文。它在这条回答下面：'}),el('p',{class:'quote',text:cleanTitle(record.title)})]);
+// ── 原帖面板：点任意一句原话，看它在原回答里的位置和这条回答的精选评论，再去知乎看全文 ──
+// 去知乎的链接附带文本片段（#:~:text=），浏览器支持且知乎页面展开时会直接定位到这句；不支持也照常打开。
+function textFragment(quote){
+  const enc=s=>encodeURIComponent(s).replace(/-/g,'%2D').replace(/,/g,'%2C');
+  const q=quote.trim().replace(/[。！？；，、\s]+$/,'');
+  return '#:~:text='+(q.length<=48?enc(q):enc(q.slice(0,18))+','+enc(q.slice(-18)));
 }
+function zhihuAnchor(record,e,label,cls='src'){
+  try{
+    const u=new URL(record.url);
+    if(u.protocol!=='https:'||!(u.hostname==='zhihu.com'||u.hostname.endsWith('.zhihu.com')))return null;
+    u.hash='';
+    return el('a',{href:u.href+(e?.kind==='answer'?textFragment(e.text):''),target:'_blank',rel:'noopener noreferrer',class:cls,text:label});
+  }catch{return null;}
+}
+let postReturnFocus=null;
+function openPost(e,record,trigger){
+  const drawer=$('post-drawer');
+  const quote=e.kind==='answer'?e.text:null;
+  let marked=false;
+  const paragraphs=record.text.split(/\n+/).map(s=>s.trim()).filter(Boolean).map(p=>{
+    const at=quote&&!marked?p.indexOf(quote):-1;
+    if(at<0)return el('p',{text:p});
+    marked=true;
+    return el('p',{},[p.slice(0,at),el('mark',{id:'post-hit',text:quote}),p.slice(at+quote.length)]);
+  });
+  const objectionByComment=new Map((record.objections||[]).map(o=>[o.commentIndex,o]));
+  const comments=(record.comments||[]).map((text,i)=>{
+    const o=objectionByComment.get(i);
+    const hit=e.kind==='comment'&&e.commentIndex===i;
+    return el('li',{class:'post-comment'+(o?(o.type==='adds_condition'?' cond':' pushed'):'')+(hit?' hit':''),id:hit?'post-hit':false},[
+      o?el('span',{class:'pb-chip'+(o.type==='adds_condition'?' cond':''),text:o.typeLabel}):null,
+      el('p',{text:text})
+    ]);
+  });
+  const copied=el('span',{class:'note',role:'status'});
+  const isArticle=/zhuanlan\.zhihu\.com|\/p\/\d+/.test(record.url||'');
+  drawer.replaceChildren(
+    el('div',{class:'drawer-backdrop','data-close':'1'}),
+    el('section',{class:'drawer-panel',role:'dialog','aria-modal':'true','aria-labelledby':'post-title'},[
+      el('header',{class:'drawer-head'},[
+        el('p',{class:'drawer-kicker',text:isArticle?'知乎文章':'知乎回答'}),
+        el('h2',{id:'post-title',class:'drawer-title',text:cleanTitle(record.title)}),
+        el('p',{class:'meta',text:(record.author||'匿名用户')+' · '+(record.voteUp??'—')+' 赞 · 原站评论 '+(record.commentCount??'未知')}),
+        button('关闭',closePost,{class:'drawer-close','aria-label':'关闭原帖'})
+      ]),
+      el('div',{class:'drawer-body'},[
+        el('p',{class:'note',text:'以下是知乎接口返回的正文（可能是摘要）。'+(quote?'黄色是被引用的那一句，程序按编号从原文取出，一字未改。':'被引用的是下面高亮的那条评论。')}),
+        el('div',{class:'post-text'},paragraphs),
+        el('h3',{class:'post-sub',text:'这条回答的精选评论'}),
+        comments.length?el('ul',{class:'post-comments'},comments):el('p',{class:'note',text:'这次没有取到这条回答的评论。'})
+      ]),
+      el('footer',{class:'drawer-foot'},[
+        zhihuAnchor(record,e,'去知乎看全文 · 给答主点赞','btn'),
+        button('复制这句',async()=>{
+          try{await navigator.clipboard.writeText(e.text);copied.textContent='已复制，可以在知乎页面里搜索定位。';}
+          catch{copied.textContent='没能复制，请手动选中上面的原话。';}
+        },{class:'btn ghost'}),
+        copied
+      ])
+    ])
+  );
+  drawer.hidden=false;
+  document.body.classList.add('drawer-open');
+  postReturnFocus=trigger||null;
+  drawer.querySelector('.drawer-close').focus();
+  requestAnimationFrame(()=>document.getElementById('post-hit')?.scrollIntoView({block:'center'}));
+}
+function closePost(){
+  const drawer=$('post-drawer');
+  if(drawer.hidden)return;
+  drawer.hidden=true;clear(drawer);
+  document.body.classList.remove('drawer-open');
+  postReturnFocus?.focus?.();postReturnFocus=null;
+}
+$('post-drawer').addEventListener('click',event=>{if(event.target.dataset?.close)closePost();});
+document.addEventListener('keydown',event=>{if(event.key==='Escape')closePost();});
+
 function evidenceFigure(e,byId,pb){
   const record=byId.get(e.recordId);
-  const panel=record?verifyPanel(e,record):null;
-  const toggle=panel?button('核对',()=>{
-    panel.hidden=!panel.hidden;
-    toggle.textContent=panel.hidden?'核对':'收起核对';
-    toggle.setAttribute('aria-expanded',String(!panel.hidden));
-  },{class:'link-btn','aria-expanded':'false'}):null;
+  const open=event=>record&&openPost(e,record,event.currentTarget);
+  const quote=el('blockquote',{text:e.text,class:record?'clickable':false,tabindex:record?'0':false,role:record?'button':false,title:record?'看原帖':false});
+  if(record){
+    quote.addEventListener('click',open);
+    quote.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();open(event);}});
+  }
   return el('figure',{class:'evidence'},[
-    el('blockquote',{text:e.text}),
-    el('figcaption',{},[el('span',{text:attribution(e,record)}),toggle,record?sourceLink(record,'原文 ↗'):null]),
-    panel,
+    quote,
+    el('figcaption',{},[
+      el('span',{text:attribution(e,record)}),
+      record?button('看原帖',open,{class:'link-btn'}):null,
+      record?zhihuAnchor(record,e,'知乎 ↗'):null
+    ]),
     pushbackBlock(pb.of(e))
   ]);
 }
@@ -408,9 +483,11 @@ function renderAccount(me,note=''){
 }
 
 // ── 登录后：我的知乎收藏（挑一个问题对比 + 收藏体检） ──
-const mine={items:null,error:'',relogin:false,checkup:null,checking:false,checkError:''};
+// 两种体检：近期收藏（收藏体检）和本人发过的内容（答主视角），结果分开保存。
+const freshChecks=()=>({collections:{result:null,running:false,error:''},contents:{result:null,running:false,error:''}});
+const mine={items:null,error:'',relogin:false,checks:freshChecks()};
 async function loadMine(){
-  Object.assign(mine,{items:null,error:'',relogin:false,checkup:null,checking:false,checkError:''});
+  Object.assign(mine,{items:null,error:'',relogin:false,checks:freshChecks()});
   $('mine').hidden=false;
   $('mine').replaceChildren(el('p',{class:'note',text:'正在读取你最近的知乎收藏…'}));
   try{
@@ -427,12 +504,13 @@ function checkupChip(item){
     const cond=onlyConditions(item.objections);
     return el('span',{class:'pb-chip'+(cond?' cond':''),text:cond?'有人补了前提':'有人不同意'});
   }
-  const label={incomplete:'分析未完成',quiet:'评论区没发现异议',no_comments:'没有取到评论',unmatched:'没找到这条的评论区'}[item.status];
+  const label={incomplete:'分析未完成',quiet:'评论区没发现异议',no_comments:'没有取到评论',unmatched:'没找到这条的评论区',uncommented:'还没有人评论'}[item.status];
   return el('span',{class:'chip t-no_signal',text:label});
 }
-function checkupView(result){
+function checkupView(result,source){
+  const what=source==='contents'?'你最近发过的':'最近收藏的';
   return el('div',{class:'checkup'},[
-    el('p',{class:'result-summary',text:`检查了最近 ${result.checked} 条收藏：找到 ${result.matched} 条的评论区，其中 ${result.pushback} 条有读者当场不同意或补了前提。`}),
+    el('p',{class:'result-summary',text:`检查了${what} ${result.checked} 条内容：找到 ${result.matched} 条的评论区，其中 ${result.pushback} 条有读者当场不同意或补了前提。`}),
     el('p',{class:'note',text:'做法：用每条回答里的一句话去知乎搜索，对上了才拿得到精选评论（每条最多 3 条），对不上的如实标出。反驳由模型挑出，展示读者原话供你判断；有人反驳不代表反驳成立。'}),
     el('ul',{class:'checkup-list'},result.items.map(item=>el('li',{class:'checkup-item'},[
       el('div',{class:'checkup-top'},[
@@ -444,34 +522,46 @@ function checkupView(result){
     ])))
   ]);
 }
+function checkBlock(source,title,intro,label,enabled){
+  const check=mine.checks[source];
+  return el('section',{class:'mine-block'},[
+    el('h3',{class:'mine-sub',text:title}),
+    check.result?checkupView(check.result,source):el('div',{class:'mine-check'},[
+      el('p',{class:'note',text:intro}),
+      enabled?button(check.running?'正在体检…（30–60 秒）':label,()=>runMineCheckup(source),{class:'btn small',disabled:check.running}):null
+    ]),
+    check.error?el('p',{class:'note warn'},[check.error,' ',mine.relogin?reloginLink():null]):null
+  ]);
+}
 function renderMine(){
   const box=$('mine');
-  const head=el('h2',{id:'mine-title',class:'mine-title',text:'我的知乎收藏'});
+  const head=el('h2',{id:'mine-title',class:'mine-title',text:'我的知乎'});
   if(mine.error){box.replaceChildren(head,el('p',{class:'note'},[mine.error,' ',mine.relogin?reloginLink():null]));return;}
   const items=mine.items||[];
-  if(!items.length){box.replaceChildren(head,el('p',{class:'note',text:'最近的收藏里没有回答或文章。'}));return;}
-  const pick=el('div',{class:'mine-pick'},[
-    el('p',{class:'note',text:'从你收藏的内容里挑一个问题，对比两边：'}),
-    el('div',{class:'chips'},items.slice(0,6).map(item=>button(item.title.length>28?item.title.slice(0,28)+'…':item.title,()=>{
-      try{load(viewFor(normalizeQuestion(item.title.slice(0,80))));}catch(error){$('ask-note').textContent=error.message;}
-    },{class:'chip-btn',title:item.title})))
+  const pick=el('section',{class:'mine-block'},[
+    el('h3',{class:'mine-sub',text:'从收藏里挑一个问题'}),
+    items.length
+      ?el('div',{class:'chips'},items.slice(0,6).map(item=>button(item.title.length>28?item.title.slice(0,28)+'…':item.title,()=>{
+        try{load(viewFor(normalizeQuestion(item.title.slice(0,80))));}catch(error){$('ask-note').textContent=error.message;}
+      },{class:'chip-btn',title:item.title})))
+      :el('p',{class:'note',text:'最近的收藏里没有回答或文章。'})
   ]);
-  const check=el('div',{class:'mine-check'},[
-    mine.checkup?null:el('p',{class:'note',text:`收藏体检：看看你最近收藏的 ${Math.min(items.length,20)} 条内容，评论区有没有人当场不同意。大约需要 30–60 秒。`}),
-    mine.checkup?null:button(mine.checking?'正在体检…':'体检我的收藏',runMineCheckup,{class:'btn small',disabled:mine.checking}),
-    mine.checkError?el('p',{class:'note warn'},[mine.checkError,' ',mine.relogin?reloginLink():null]):null
-  ]);
-  box.replaceChildren(head,pick,check,mine.checkup?checkupView(mine.checkup):null);
+  box.replaceChildren(head,el('div',{class:'mine-grid'},[
+    pick,
+    checkBlock('collections','收藏体检',`看看你最近收藏的 ${Math.min(items.length,20)} 条内容，评论区有没有人当场不同意。`,'体检我的收藏',items.length>0),
+    checkBlock('contents','答主视角','看看你自己发过的回答、文章和想法，评论区有没有人当场不同意。','体检我发过的内容',true)
+  ]));
 }
-async function runMineCheckup(){
-  mine.checking=true;mine.checkError='';renderMine();
+async function runMineCheckup(source){
+  const check=mine.checks[source];
+  check.running=true;check.error='';renderMine();
   try{
-    const res=await fetch('/api/my/checkup',{method:'POST',headers:{'content-type':'application/json'},body:'{}',signal:AbortSignal.timeout(150000)});
+    const res=await fetch('/api/my/checkup',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({source}),signal:AbortSignal.timeout(150000)});
     const data=await res.json().catch(()=>({}));
-    if(res.ok)mine.checkup=data;
-    else{mine.checkError=data.error||'收藏体检没有完成，请稍后再试。';mine.relogin=!!data.relogin;}
-  }catch{mine.checkError='收藏体检没有完成，请稍后再试。';}
-  mine.checking=false;renderMine();
+    if(res.ok)check.result=data;
+    else{check.error=data.error||'体检没有完成，请稍后再试。';mine.relogin=!!data.relogin;}
+  }catch{check.error='体检没有完成，请稍后再试。';}
+  check.running=false;renderMine();
 }
 async function loadAccount(){
   const params=new URLSearchParams(location.search);
