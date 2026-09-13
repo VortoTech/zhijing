@@ -85,14 +85,47 @@ test('会话里保留 token 最多 1 小时、只在服务端；过期后身份�
   assert.equal(oauth.current({zj_sid:sid2}).name,'测试用户');
 });
 
-test('换 token 或读用户失败时不建立会话',async()=>{
-  for(const zhihu of [fakeZhihu({tokenBody:{code:40001,message:'invalid'}}),fakeZhihu({userText:'{"code":404,"data":"User don\'t exist"}'})]){
-    const oauth=createOAuth(env,zhihu);
-    const {location,cookie}=oauth.begin();
-    const state=new URL(location).searchParams.get('state');
-    await assert.rejects(oauth.complete(new URLSearchParams({state,authorization_code:'c'}),{zj_login:cookieValue(cookie,'zj_login')}));
-    assert.equal(oauth.stats().sessions,0);
-  }
+test('换 token 失败不建立会话；读用户资料失败仍能登录（显示「知乎用户」），收藏功能不受影响',async()=>{
+  const bad=createOAuth(env,fakeZhihu({tokenBody:{code:40001,message:'invalid'}}));
+  const b=bad.begin();
+  await assert.rejects(bad.complete(new URLSearchParams({state:new URL(b.location).searchParams.get('state'),authorization_code:'c'}),{zj_login:cookieValue(b.cookie,'zj_login')}));
+  assert.equal(bad.stats().sessions,0);
+
+  const noProfile=createOAuth(env,fakeZhihu({userText:'{"code":404,"data":"User don\'t exist"}'}));
+  const n=noProfile.begin();
+  const {user,cookies}=await noProfile.complete(new URLSearchParams({state:new URL(n.location).searchParams.get('state'),authorization_code:'c'}),{zj_login:cookieValue(n.cookie,'zj_login')});
+  assert.equal(user.name,'知乎用户');
+  assert.equal(user.profileMissing,true);
+  assert.equal(noProfile.accessToken({zj_sid:cookieValue(cookies,'zj_sid')}),'tok-abc');
+});
+
+test('知乎回调不带 state 时，用本浏览器发起登录时留下的 Cookie 找回请求；Cookie 不对或重复使用仍拒绝',async()=>{
+  const oauth=createOAuth(env,fakeZhihu());
+  const nonce=cookieValue(oauth.begin().cookie,'zj_login');
+  const noState=new URLSearchParams({authorization_code:'c'});
+  await assert.rejects(oauth.complete(noState,{zj_login:'another-browser'}),e=>e.reason==='state');
+  await assert.rejects(oauth.complete(noState,{}),e=>e.reason==='state');
+  const ok=await oauth.complete(noState,{zj_login:nonce});
+  assert.equal(ok.stateReturned,false);
+  await assert.rejects(oauth.complete(noState,{zj_login:nonce}),e=>e.reason==='state');
+});
+
+test('/user 只带 OAuth token 失败时，改用 Access Secret + X-OAuth-Token 再试；也认 name/avatar_url 字段',async()=>{
+  const calls=[];
+  const request=async(url,options={})=>{
+    calls.push(options.headers||{});
+    if(url.endsWith('/access_token'))return new Response(JSON.stringify({access_token:'tok-abc',expires_in:3600}));
+    return options.headers['x-oauth-token']
+      ?new Response('{"data":{"name":"演示答主","avatar_url":"https://pic1.zhimg.com/x.jpg"}}')
+      :new Response('{"code":401}',{status:401});
+  };
+  const oauth=createOAuth({...env,ZHIHU_ACCESS_SECRET:'secret-x'},{request});
+  const a=oauth.begin();
+  const {user}=await oauth.complete(new URLSearchParams({state:new URL(a.location).searchParams.get('state'),authorization_code:'c'}),{zj_login:cookieValue(a.cookie,'zj_login')});
+  assert.equal(user.name,'演示答主');
+  assert.equal(user.avatar,'https://pic1.zhimg.com/x.jpg');
+  assert.equal(calls[2]['x-oauth-token'],'tok-abc');
+  assert.equal(calls[2].authorization,'Bearer secret-x');
 });
 
 async function serve(server,fn){

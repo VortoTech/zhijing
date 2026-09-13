@@ -227,8 +227,8 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
       if(req.method==='GET'&&oauth.available&&url.pathname===oauth.callbackPath
         &&['state','authorization_code','code'].some(key=>url.searchParams.has(key))){
         try{
-          const {cookies}=await oauth.complete(url.searchParams,parseCookies(req.headers.cookie));
-          log(JSON.stringify({event:'login'}));
+          const {cookies,user,stateReturned}=await oauth.complete(url.searchParams,parseCookies(req.headers.cookie));
+          log(JSON.stringify({event:'login',stateReturned,profile:!user.profileMissing}));
           res.writeHead(302,{Location:'/?login=ok','Set-Cookie':cookies,'Cache-Control':'no-store'});
         }catch(error){
           log(JSON.stringify({event:'login_failed',reason:error.reason||'upstream'}));
@@ -263,7 +263,8 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
         }
 
         if(!askReady(env))return send(res,503,{error:'收藏体检暂未开放。'});
-        const key=user.uid||user.hashId;
+        // 读不到资料的用户没有 uid：按会话区分，避免体检结果串到别人身上。
+        const key=user.uid||user.hashId||('sid:'+cookies.zj_sid);
         const hit=checkups.get(key);
         if(hit&&Date.now()<hit.expires){
           try{return send(res,200,await hit.pending);}catch{}

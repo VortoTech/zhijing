@@ -458,7 +458,7 @@ async function loadAccount(){
   try{
     const res=await fetch('/api/me',{signal:AbortSignal.timeout(8000)});
     if(!res.ok)return;
-    renderAccount(await res.json(),result==='ok'?'已用知乎账号登录':result==='failed'?'知乎登录没有完成，可以再试一次':'');
+    renderAccount(await res.json(),result==='ok'?'已用知乎账号登录':result==='failed'?'知乎登录没有完成。知乎要求账号已绑定手机号并完成实名认证，检查后可以再试一次':'');
   }catch{}
 }
 

@@ -41,18 +41,21 @@ function safeAvatar(value){
 }
 
 // uid 可能超出 JS 安全整数：解析前把数字 uid 改写成字符串，无损保留。
+// /user 没有正式响应 schema：文档写 fullname/avatar_path，官方 zhihu-hackathon skill 示例读 name/avatar_url，两种都认。
 export function parseUser(text){
   let body;
   try{body=JSON.parse(String(text).replace(/("uid"\s*:\s*)(-?\d+)/,'$1"$2"'));}catch{return null;}
-  const user=body?.data&&typeof body.data==='object'?body.data:body;
-  const uid=user?.uid!=null?String(user.uid):'';
-  const hashId=typeof user?.hash_id==='string'?user.hash_id:'';
-  if(!uid&&!hashId)return null;
+  const source=[body?.data,body?.Data,body?.user].find(v=>v&&typeof v==='object')||body;
+  const pick=(...keys)=>keys.map(key=>source?.[key]).find(v=>typeof v==='string'&&v.trim());
+  const uid=source?.uid!=null?String(source.uid):'';
+  const hashId=pick('hash_id','HashId')||'';
+  const name=pick('fullname','name','Fullname','Name');
+  if(!uid&&!hashId&&!name)return null;
   return {
     uid,hashId,
-    name:typeof user.fullname==='string'&&user.fullname.trim()?user.fullname.trim().slice(0,40):'知乎用户',
-    headline:typeof user.headline==='string'?user.headline.slice(0,80):'',
-    avatar:safeAvatar(user.avatar_path)
+    name:name?name.trim().slice(0,40):'知乎用户',
+    headline:(pick('headline','Headline')||'').slice(0,80),
+    avatar:safeAvatar(pick('avatar_path','avatar_url','AvatarUrl'))
   };
 }
 
@@ -68,6 +71,23 @@ export function createOAuth(env=process.env,{request=fetch,now=Date.now}={}){
     const t=now();
     for(const [key,value] of pending)if(value.expires<t)pending.delete(key);
     for(const [key,value] of sessions)if(value.expires<t)sessions.delete(key);
+  }
+  // 文档写 /user 只带 OAuth token；官方 zhihu-hackathon skill 的示例带 Access Secret + X-OAuth-Token。两种都试，
+  // 都失败也不阻断登录（官方说明：资料读取失败不得伪造字段，也不阻断其他用户接口）。
+  async function readProfile(accessToken){
+    const attempts=[{authorization:`Bearer ${accessToken}`}];
+    if(env.ZHIHU_ACCESS_SECRET)attempts.push({
+      authorization:`Bearer ${env.ZHIHU_ACCESS_SECRET}`,'x-oauth-token':accessToken,
+      'x-request-timestamp':String(Math.floor(Date.now()/1000))
+    });
+    for(const headers of attempts){
+      try{
+        const response=await request(USER_URL,{headers,redirect:'error',signal:AbortSignal.timeout(10000)});
+        const user=response.ok?parseUser(await response.text()):null;
+        if(user)return user;
+      }catch{}
+    }
+    return null;
   }
   function cookie(name,value,maxAgeSeconds){
     return `${name}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSeconds}`+(config?.secure?'; Secure':'');
@@ -92,8 +112,14 @@ export function createOAuth(env=process.env,{request=fetch,now=Date.now}={}){
     // 回调：先原子消费 state 再校验，重复回调、其他浏览器、过期一律拒绝；之后才换 token。
     async complete(query,cookies){
       const state=query.get('state');
-      const entry=state?pending.get(state):null;
-      if(entry)pending.delete(state);
+      let key=state;
+      // 官方 skill 记录的已知缺口：回调可能不回传 state。此时用本浏览器发起登录时留下的一次性 zj_login 找回那次请求，
+      // 仍然只接受本浏览器 10 分钟内发起、尚未使用过的登录。
+      if(!state&&cookies.zj_login){
+        for(const [pendingState,value] of pending)if(value.nonce===cookies.zj_login){key=pendingState;break;}
+      }
+      const entry=key?pending.get(key):null;
+      if(entry)pending.delete(key);
       if(!entry||entry.expires<now()||!cookies.zj_login||cookies.zj_login!==entry.nonce)throw fail('state','登录请求无效或已过期');
       const code=query.get('authorization_code')||query.get('code');
       if(!code)throw fail('code','没有拿到授权');
@@ -108,19 +134,14 @@ export function createOAuth(env=process.env,{request=fetch,now=Date.now}={}){
       const accessToken=[tokenBody?.access_token,tokenBody?.data?.access_token].find(v=>typeof v==='string'&&v);
       if(!tokenResponse.ok||!accessToken)throw fail('token','换取授权失败');
 
-      const userResponse=await request(USER_URL,{
-        headers:{authorization:`Bearer ${accessToken}`},
-        redirect:'error',signal:AbortSignal.timeout(10000)
-      });
-      const user=userResponse.ok?parseUser(await userResponse.text()):null;
-      if(!user)throw fail('user','读取知乎用户信息失败');
+      const user=await readProfile(accessToken)||{uid:'',hashId:'',name:'知乎用户',headline:'',avatar:'',profileMissing:true};
 
       const expiresIn=Number(tokenBody?.expires_in??tokenBody?.data?.expires_in)*1000;
       const tokenTtl=Math.min(expiresIn>0?expiresIn:TOKEN_TTL_MAX_MS,TOKEN_TTL_MAX_MS);
       sweep();
       const sid=randomToken();
       sessions.set(sid,{user,token:accessToken,tokenExpires:now()+tokenTtl,expires:now()+SESSION_TTL_MS});
-      return {user,cookies:[cookie('zj_sid',sid,SESSION_TTL_MS/1000),cookie('zj_login','',0)]};
+      return {user,stateReturned:!!state,cookies:[cookie('zj_sid',sid,SESSION_TTL_MS/1000),cookie('zj_login','',0)]};
     },
 
     current(cookies){
