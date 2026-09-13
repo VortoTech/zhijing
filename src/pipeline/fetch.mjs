@@ -97,7 +97,7 @@ export async function fetchTopic(topic,env=process.env,{queries=null,search=sear
     const failedQueries=batches.filter(b=>b.status==='rejected').length;
     const flat=batches.filter(b=>b.status==='fulfilled').flatMap(b=>b.value);
     const records=dedupe(flat,{limit:60});
-    if(!records.length)throw new Error('本次没有检索到可用内容');
+    if(!records.length)throw Object.assign(new Error('本次没有检索到可用内容'),{empty:true});
     const value={
       records,
       meta:{

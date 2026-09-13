@@ -75,7 +75,7 @@ function modelEndpoint(env){
   return base.href.replace(/\/$/,'')+'/chat/completions';
 }
 
-async function chatJSON({system,user,maxTokens},env,request,signal){
+export async function chatJSON({system,user,maxTokens},env,request,signal){
   const body=await request(modelEndpoint(env),{
     signal,
     method:'POST',

@@ -7,6 +7,7 @@ import {configuration} from './pipeline/fetch.mjs';
 import {fetchTopic} from './pipeline/fetch.mjs';
 import {classify} from './pipeline/classify.mjs';
 import {buildReadingMap,ORDERS} from './engine.mjs';
+import {normalizeQuestion,planQuestion,askTopic,widenFocus} from './ask.mjs';
 
 const root=new URL('../',import.meta.url);
 const topics=await loadTopics();
@@ -22,6 +23,7 @@ const FILES={
 const CSP="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 const DEFAULT_LIVE_DAILY_LIMIT=200;
 const PARTIAL_TTL_MS=3*60*1000;
+const QUOTA_MESSAGE='今天的实时检索次数已用完，北京时间 0 点恢复。可以先看看示例。';
 
 // 每次真正触发检索与模型的实时请求计一次，按北京时间自然日清零；缓存命中不计。
 function dailyBudget(raw){
@@ -77,17 +79,47 @@ function validateRequest(input){
   return {topicId:input.topicId,order,mode,situation,conditions,refresh:input.refresh===true};
 }
 
+function validateAsk(input){
+  if(!input||typeof input!=='object'||Array.isArray(input))throw new Error('请求格式不正确');
+  return {question:normalizeQuestion(input.question),refresh:input.refresh===true};
+}
+
+// 自由提问只在实时凭据齐全且显式开启试用时开放。
+function askReady(env){
+  return configuration(env).liveReady&&env.ZHIJING_ENABLE_PILOT==='1';
+}
+
+function incompleteCount(dataset){
+  return dataset.records.filter(r=>['failed','partial'].includes(r.analysis?.status)).length;
+}
+
 export function createServer(env=process.env,dependencies={fetchTopic,classify}){
+  const plan=dependencies.planQuestion||planQuestion;
+  const log=line=>(dependencies.log||console.info)(line);
   let inFlight=0;
   const datasets=new Map();
   const liveBudget=dailyBudget(env.ZHIJING_LIVE_DAILY_LIMIT);
-  async function getDataset(topic,mode,refresh=false){
-    const key=`${topic.id}:${mode}`;
+
+  async function cached(key,{refresh=false,live=false},produce){
     const hit=datasets.get(key);
     if(hit&&Date.now()<hit.expires&&!(refresh&&hit.partial))return hit.pending;
-    if(mode==='live'&&configuration(env).liveReady&&!liveBudget.take())throw Object.assign(new Error('今日实时检索次数已用完'),{quota:true});
+    if(live&&!liveBudget.take())throw Object.assign(new Error('今日实时检索次数已用完'),{quota:true});
     const entry={expires:Date.now()+15*60*1000};
-    entry.pending=(async()=>{
+    entry.pending=produce();
+    datasets.set(key,entry);
+    try{
+      const dataset=await entry.pending;
+      // 部分结果短时缓存，避免公开访问时每个访客都重跑模型；「重新分析」带 refresh 可越过。
+      if((dataset.meta.failedQueries||incompleteCount(dataset))&&datasets.get(key)===entry){
+        entry.partial=true;entry.expires=Date.now()+PARTIAL_TTL_MS;
+      }
+      return dataset;
+    }
+    catch(error){if(datasets.get(key)===entry)datasets.delete(key);throw error;}
+  }
+
+  function getDataset(topic,mode,refresh=false){
+    return cached(`${topic.id}:${mode}`,{refresh,live:mode==='live'&&configuration(env).liveReady},async()=>{
       if(mode==='snapshot'){
         const snapshot=await loadSnapshot(topic.id);
         return {...snapshot,meta:{...snapshot.meta,mode}};
@@ -99,18 +131,48 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
         text:'知乎本次检索原文；最多取每条内容的 3 条精选评论。',
         objections:'模型归类并校验引用来源。引用存在不代表异议关系或内容已被验证。'
       }}};
-    })();
-    datasets.set(key,entry);
-    try{
-      const dataset=await entry.pending;
-      // 部分结果短时缓存，避免公开访问时每个访客都重跑模型；「重新分析」带 refresh 可越过。
-      if((dataset.meta.failedQueries||dataset.records.some(r=>['failed','partial'].includes(r.analysis?.status)))&&datasets.get(key)===entry){
-        entry.partial=true;entry.expires=Date.now()+PARTIAL_TTL_MS;
-      }
-      return dataset;
-    }
-    catch(error){if(datasets.get(key)===entry)datasets.delete(key);throw error;}
+    });
   }
+
+  function getAnswer(question,refresh){
+    return cached(`ask:${question}`,{refresh,live:true},async()=>{
+      const planned=await plan(question,env);
+      if(planned.kind==='informational')throw Object.assign(new Error('信息查询类问题'),{informational:true});
+      const fetched=await dependencies.fetchTopic(askTopic(question,planned),env);
+      const topic=widenFocus(askTopic(question,planned),fetched.records);
+      const records=await dependencies.classify(fetched.records,topic,env);
+      return {topic,records,meta:{...fetched.meta,mode:'live',question,sessionKey:`ask:${question}`,planned:planned.planned,provenance:{
+        text:'知乎本次检索原文；最多取每条内容的 3 条精选评论。',
+        objections:'模型归类并校验引用来源。引用存在不代表异议关系或内容已被验证。'
+      }}};
+    });
+  }
+
+  async function handleAsk(req,res){
+    let input;
+    try{input=validateAsk(await readBody(req));}
+    catch(error){return send(res,400,{error:error.message||'输入无效'});}
+    if(!askReady(env))return send(res,503,{error:'实时检索暂未开放，可以先看看示例。'});
+    if(inFlight>=4)return send(res,429,{error:'当前请求较多，请稍后再试。'});
+    inFlight++;
+    const requestId=randomUUID();
+    const started=Date.now();
+    res.setHeader('X-Request-ID',requestId);
+    try{
+      const dataset=await getAnswer(input.question,input.refresh);
+      // 日志不记录问题原文、正文或评论。
+      log(JSON.stringify({event:'ask',requestId,durationMs:Date.now()-started,records:dataset.records.length,incomplete:incompleteCount(dataset),failedQueries:dataset.meta.failedQueries||0,planned:dataset.meta.planned}));
+      return send(res,200,buildReadingMap(dataset.records,{topic:dataset.topic,order:'attention',meta:{...dataset.meta,requestId,pilot:true}}));
+    }catch(error){
+      const reason=error.quota?'quota':error.informational?'informational':error.empty?'empty':'upstream';
+      log(JSON.stringify({event:'ask_failed',requestId,durationMs:Date.now()-started,reason}));
+      if(error.quota)return send(res,429,{error:QUOTA_MESSAGE});
+      if(error.informational)return send(res,422,{informational:true,error:'这个问题更像查资料（政策、流程、数据），答案由规定决定，评论区很少有人争论，知镜帮不上忙。换一个需要做选择、想听听别人经验的问题试试。'});
+      if(error.empty)return send(res,404,{error:'知乎上没搜到相关回答。换个说法试试，比如写成「A 还是 B」。'});
+      return send(res,503,{error:'实时检索或模型分析暂不可用，请稍后重试，或先看看示例。系统没有用示例替换本次结果。'});
+    }finally{inFlight--;}
+  }
+
   return http.createServer(async(req,res)=>{
     res.setHeader('X-Content-Type-Options','nosniff');
     res.setHeader('Referrer-Policy','no-referrer');
@@ -124,6 +186,7 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
         const config=configuration(env);
         return send(res,200,{
           liveReady:config.liveReady&&topics.some(t=>liveTopicEnabled(t,env)),
+          askReady:askReady(env),
           pilotEnabled:env.ZHIJING_ENABLE_PILOT==='1',
           zhihuReady:config.zhihuReady,
           modelReady:config.modelReady,
@@ -136,16 +199,18 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
               note:topic.kind==='informational'?'不适用于评论异议分析':snapshot?'可阅读离线样本':'样本准备中',
               liveNote:!liveTopicEnabled(topic,env)?'实时话题尚未开放验收':!config.liveReady?'实时服务未配置':topic.liveStatus==='pilot'?'内部试用，效果尚未验收':'实时可用'}};
           })),
-          version:'0.1.0'
+          version:'0.2.0'
         });
       }
-      if(req.method==='POST'&&url.pathname==='/api/reading-map'){
+      if(req.method==='POST'&&(url.pathname==='/api/reading-map'||url.pathname==='/api/ask')){
         if(req.headers.origin&&new URL(req.headers.origin).host!==req.headers.host){
           return send(res,403,{error:'请求来源不匹配'});
         }
         if(!req.headers['content-type']?.startsWith('application/json')){
           return send(res,415,{error:'请发送 JSON 请求'});
         }
+        if(url.pathname==='/api/ask')return await handleAsk(req,res);
+
         let input;
         try{input=validateRequest(await readBody(req));}
         catch(error){return send(res,400,{error:error.message||'输入无效'});}
@@ -165,8 +230,7 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
         res.setHeader('X-Request-ID',requestId);
         try{
           const dataset=await getDataset(topic,input.mode,input.refresh);
-          const incomplete=dataset.records.filter(r=>['failed','partial'].includes(r.analysis?.status)).length;
-          (dependencies.log||console.info)(JSON.stringify({event:'reading_map',requestId,topicId:topic.id,mode:input.mode,durationMs:Date.now()-started,records:dataset.records.length,incomplete,failedQueries:dataset.meta.failedQueries||0}));
+          log(JSON.stringify({event:'reading_map',requestId,topicId:topic.id,mode:input.mode,durationMs:Date.now()-started,records:dataset.records.length,incomplete:incompleteCount(dataset),failedQueries:dataset.meta.failedQueries||0}));
           return send(res,200,buildReadingMap(dataset.records,{
             topic,
             situation:input.situation,
@@ -175,8 +239,8 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
             meta:{...dataset.meta,requestId,pilot:input.mode==='live'&&topic.liveStatus==='pilot'}
           }));
         }catch(error){
-          (dependencies.log||console.info)(JSON.stringify({event:'reading_map_failed',requestId,topicId:topic.id,mode:input.mode,durationMs:Date.now()-started}));
-          if(error.quota)return send(res,429,{error:'今天的实时检索次数已用完，北京时间 0 点恢复。可以先阅读离线样本。'});
+          log(JSON.stringify({event:'reading_map_failed',requestId,topicId:topic.id,mode:input.mode,durationMs:Date.now()-started}));
+          if(error.quota)return send(res,429,{error:QUOTA_MESSAGE});
           const liveHint=input.mode==='live'
             ?'实时检索或模型分析暂不可用。请检查服务端凭据与额度，或切换到精选样本。系统没有替换本次结果。'
             :'这个话题的样本暂不可用，请选择有离线样本的话题，或稍后重试。';
@@ -201,6 +265,6 @@ if(process.argv[1]===fileURLToPath(import.meta.url)){
   const host=process.env.HOST||'127.0.0.1';
   createServer().listen(port,host,()=>{
     const config=configuration();
-    console.log(`知镜已启动 http://${host}:${port} · 话题 ${topics.length} 个 · 精选样本可用 · 实时模式${config.liveReady?'已配置':'未配置'}`);
+    console.log(`知镜已启动 http://${host}:${port} · 话题 ${topics.length} 个 · 精选样本可用 · 实时模式${config.liveReady?'已配置':'未配置'} · 自由提问${askReady(process.env)?'已开放':'未开放'}`);
   });
 }

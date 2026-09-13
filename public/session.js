@@ -8,7 +8,7 @@ export function createReadingSession(){
     },
     accept(ticket,data){
       if(ticket.revision!==revision||ticket.signal.aborted)return false;
-      if(`${data.topic?.id}:${data.meta?.mode}`!==ticket.key)return false;
+      if((data.meta?.sessionKey??`${data.topic?.id}:${data.meta?.mode}`)!==ticket.key)return false;
       current=data;return true;
     },
     active(ticket){return ticket.revision===revision;},
