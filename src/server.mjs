@@ -20,6 +20,21 @@ const FILES={
 };
 
 const CSP="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
+const DEFAULT_LIVE_DAILY_LIMIT=200;
+const PARTIAL_TTL_MS=3*60*1000;
+
+// 每次真正触发检索与模型的实时请求计一次，按北京时间自然日清零；缓存命中不计。
+function dailyBudget(raw){
+  const parsed=Number.parseInt(raw,10);
+  const limit=parsed>0?parsed:DEFAULT_LIVE_DAILY_LIMIT;
+  let day='',used=0;
+  return {take(){
+    const today=new Date(Date.now()+8*3600*1000).toISOString().slice(0,10);
+    if(today!==day){day=today;used=0;}
+    if(used>=limit)return false;
+    used++;return true;
+  }};
+}
 
 function send(res,status,value){
   res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});
@@ -59,16 +74,18 @@ function validateRequest(input){
     situation=Object.fromEntries(entries);
   }
   const conditions=Array.isArray(input.conditions)?input.conditions.slice(0,4):[];
-  return {topicId:input.topicId,order,mode,situation,conditions};
+  return {topicId:input.topicId,order,mode,situation,conditions,refresh:input.refresh===true};
 }
 
 export function createServer(env=process.env,dependencies={fetchTopic,classify}){
   let inFlight=0;
   const datasets=new Map();
-  async function getDataset(topic,mode){
+  const liveBudget=dailyBudget(env.ZHIJING_LIVE_DAILY_LIMIT);
+  async function getDataset(topic,mode,refresh=false){
     const key=`${topic.id}:${mode}`;
     const hit=datasets.get(key);
-    if(hit&&Date.now()<hit.expires)return hit.pending;
+    if(hit&&Date.now()<hit.expires&&!(refresh&&hit.partial))return hit.pending;
+    if(mode==='live'&&configuration(env).liveReady&&!liveBudget.take())throw Object.assign(new Error('今日实时检索次数已用完'),{quota:true});
     const entry={expires:Date.now()+15*60*1000};
     entry.pending=(async()=>{
       if(mode==='snapshot'){
@@ -86,7 +103,10 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
     datasets.set(key,entry);
     try{
       const dataset=await entry.pending;
-      if((dataset.meta.failedQueries||dataset.records.some(r=>['failed','partial'].includes(r.analysis?.status)))&&datasets.get(key)===entry)datasets.delete(key);
+      // 部分结果短时缓存，避免公开访问时每个访客都重跑模型；「重新分析」带 refresh 可越过。
+      if((dataset.meta.failedQueries||dataset.records.some(r=>['failed','partial'].includes(r.analysis?.status)))&&datasets.get(key)===entry){
+        entry.partial=true;entry.expires=Date.now()+PARTIAL_TTL_MS;
+      }
       return dataset;
     }
     catch(error){if(datasets.get(key)===entry)datasets.delete(key);throw error;}
@@ -144,7 +164,7 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
         const started=Date.now();
         res.setHeader('X-Request-ID',requestId);
         try{
-          const dataset=await getDataset(topic,input.mode);
+          const dataset=await getDataset(topic,input.mode,input.refresh);
           const incomplete=dataset.records.filter(r=>['failed','partial'].includes(r.analysis?.status)).length;
           (dependencies.log||console.info)(JSON.stringify({event:'reading_map',requestId,topicId:topic.id,mode:input.mode,durationMs:Date.now()-started,records:dataset.records.length,incomplete,failedQueries:dataset.meta.failedQueries||0}));
           return send(res,200,buildReadingMap(dataset.records,{
@@ -156,6 +176,7 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
           }));
         }catch(error){
           (dependencies.log||console.info)(JSON.stringify({event:'reading_map_failed',requestId,topicId:topic.id,mode:input.mode,durationMs:Date.now()-started}));
+          if(error.quota)return send(res,429,{error:'今天的实时检索次数已用完，北京时间 0 点恢复。可以先阅读离线样本。'});
           const liveHint=input.mode==='live'
             ?'实时检索或模型分析暂不可用。请检查服务端凭据与额度，或切换到精选样本。系统没有替换本次结果。'
             :'这个话题的样本暂不可用，请选择有离线样本的话题，或稍后重试。';

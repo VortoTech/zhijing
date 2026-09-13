@@ -117,7 +117,25 @@ test('已配凭据也不能绕过话题门槛；内部试用只开放 first-job'
   });
 });
 
-test('部分分析不缓存；重试恢复；请求编号与脱敏日志可关联',async()=>{
+test('实时次数每日上限：超出返回 429 且不调上游，缓存命中不计次',async()=>{
+  let calls=0;
+  const env={ZHIJING_ENABLE_PILOT:'1',ZHIJING_LIVE_DAILY_LIMIT:'1',ZHIHU_ACCESS_SECRET:'test-only',AI_BASE_URL:'https://example.invalid',AI_API_KEY:'test-only',AI_MODEL:'test'};
+  const deps={fetchTopic:async()=>({records:snapshot.records,meta:{mode:'live'}}),classify:async records=>{
+    calls++;
+    return records.map((r,i)=>i===1?{...r,objections:[],analysis:{status:'failed',reason:'batch_failed'}}:r);
+  }};
+  await serve(createServer(env,deps),async base=>{
+    assert.equal((await post(base,{topicId:'first-job',mode:'live'})).status,200);
+    assert.equal((await post(base,{topicId:'first-job',mode:'live'})).status,200);
+    const over=await post(base,{topicId:'first-job',mode:'live',refresh:true});
+    assert.equal(over.status,429);
+    assert.match((await over.json()).error,/次数已用完/);
+    assert.equal(calls,1);
+    assert.equal((await post(base,{topicId:'first-job',mode:'snapshot'})).status,200);
+  });
+});
+
+test('部分分析短时缓存；重新分析越过缓存；请求编号与脱敏日志可关联',async()=>{
   let calls=0;const logs=[];
   const env={ZHIJING_ENABLE_PILOT:'1',ZHIHU_ACCESS_SECRET:'hidden-credential',AI_BASE_URL:'https://example.invalid',AI_API_KEY:'hidden-credential',AI_MODEL:'test'};
   const deps={log:line=>logs.push(line),fetchTopic:async()=>({records:snapshot.records,meta:{mode:'live'}}),classify:async records=>{
@@ -130,8 +148,10 @@ test('部分分析不缓存；重试恢复；请求编号与脱敏日志可关�
     assert.equal(data.records.length,60);
     assert.equal(data.diagnostics.analysisIncomplete,1);
     assert.equal(data.meta.requestId,first.headers.get('x-request-id'));
-    assert.equal((await (await post(base,{topicId:'first-job',mode:'live'})).json()).diagnostics.analysisIncomplete,0);
-    await post(base,{topicId:'first-job',mode:'live'});
+    assert.equal((await (await post(base,{topicId:'first-job',mode:'live'})).json()).diagnostics.analysisIncomplete,1);
+    assert.equal(calls,1);
+    assert.equal((await (await post(base,{topicId:'first-job',mode:'live',refresh:true})).json()).diagnostics.analysisIncomplete,0);
+    await post(base,{topicId:'first-job',mode:'live',refresh:true});
     assert.equal(calls,2);
     assert.ok(logs.some(line=>JSON.parse(line).requestId===data.meta.requestId));
     assert.ok(!logs.join('').includes('hidden-credential'));

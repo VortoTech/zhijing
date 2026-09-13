@@ -157,6 +157,7 @@ AI_BASE_URL=           模型地址（HTTPS，本机地址除外）
 AI_API_KEY=
 AI_MODEL=
 AI_EXTRA_BODY=         可选，并入请求体的 JSON 对象，例如关闭思考 {"thinking":{"type":"disabled"}}
+ZHIJING_LIVE_DAILY_LIMIT=200   每天最多触发多少次真正的实时检索+模型分析（缓存命中不计），超出返回 429
 PORT=4318
 HOST=127.0.0.1
 ```

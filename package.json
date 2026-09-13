@@ -5,11 +5,11 @@
   "type": "module",
   "description": "知镜 · 把一条按赞数排序的搜索结果，变成一张有结构的阅读地图",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.9"
   },
   "scripts": {
-    "start": "node src/server.mjs",
-    "dev": "node --watch src/server.mjs",
+    "start": "node --env-file-if-exists=.env.local src/server.mjs",
+    "dev": "node --watch --env-file-if-exists=.env.local src/server.mjs",
     "build:snapshot": "node scripts/build-snapshot.mjs",
     "analyze": "node scripts/analyze-sample.mjs",
     "smoke": "node scripts/smoke.mjs",

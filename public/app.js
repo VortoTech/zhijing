@@ -36,7 +36,7 @@ function errorMessage(message){
     },{class:'btn ghost'})
   ]));
 }
-async function run(){
+async function run(refresh=false){
   const ticket=session.begin(state.topicId+':'+state.mode);
   openCards=null;
   clearResults();clear($('error-slot'));
@@ -46,7 +46,7 @@ async function run(){
   try{
     const res=await fetch('/api/reading-map',{
       method:'POST',headers:{'content-type':'application/json'},
-      body:JSON.stringify({topicId:state.topicId,mode:state.mode}),
+      body:JSON.stringify({topicId:state.topicId,mode:state.mode,refresh}),
       signal:AbortSignal.any([ticket.signal,AbortSignal.timeout(130000)])
     });
     const data=await res.json();
@@ -144,7 +144,7 @@ function render(){
   const filters=[['flagged','异议与前提 '+flagged.length],['focused','相关回答 '+focused.length],['all','全部样本 '+data.records.length]];
   if(incomplete.length)filters.push(['incomplete','待完成分析 '+incomplete.length]);
   if(incomplete.length||data.meta.failedQueries){
-    $('status').append(el('p',{text:'本次结果不完整：'+incomplete.length+' 条分析未完成，'+(data.meta.failedQueries||0)+' 路检索失败。未完成不等于未见异议。'}),button('重新分析',()=>run(),{class:'btn ghost'}));
+    $('status').append(el('p',{text:'本次结果不完整：'+incomplete.length+' 条分析未完成，'+(data.meta.failedQueries||0)+' 路检索失败。未完成不等于未见异议。'}),button('重新分析',()=>run(true),{class:'btn ghost'}));
   }
   $('list-bar').replaceChildren(el('div',{class:'seg',role:'group','aria-label':'显示范围'},filters.map(([id,label])=>button(label,()=>{
     state.filter=id;render();$('list-bar').querySelector('[aria-pressed="true"]')?.focus();
