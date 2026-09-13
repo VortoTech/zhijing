@@ -56,7 +56,8 @@ test('自由提问：规划→检索→分类，带会话键，缓存复用，�
   const deps={
     planQuestion:async q=>{plans++;return {kind:'opinion',queries:[q,'第一份工作 高薪'],focusTerms:['第一份'],excerptTerms:['薪资'],planned:true};},
     fetchTopic:async topic=>{fetches++;assert.equal(topic.queries[0],'第一份工作选高薪还是成长');return {records:snapshot.records,meta:{mode:'live',failedQueries:0}};},
-    classify:async(records,topic)=>{classes++;assert.deepEqual(topic.focusTerms,['第一份']);return records;}
+    classify:async(records,topic)=>{classes++;assert.deepEqual(topic.focusTerms,['第一份']);return records;},
+    extractConditions:async()=>({status:'complete',conditions:[{label:'是应届生还是社招？',hint:'',evidence:[]}]})
   };
   await serve(createServer({...env,ZHIJING_LIVE_DAILY_LIMIT:'1'},deps),async base=>{
     const first=await ask(base,{question:'  第一份工作选高薪还是成长 '});
@@ -65,6 +66,7 @@ test('自由提问：规划→检索→分类，带会话键，缓存复用，�
     assert.equal(data.meta.sessionKey,'ask:第一份工作选高薪还是成长');
     assert.equal(data.meta.question,'第一份工作选高薪还是成长');
     assert.equal(data.records.length,snapshot.records.length);
+    assert.equal(data.conditions.conditions[0].label,'是应届生还是社招？');
     const session=createReadingSession();
     assert.equal(session.accept(session.begin('ask:第一份工作选高薪还是成长'),data),true);
     assert.equal((await ask(base,{question:'第一份工作选高薪还是成长'})).status,200);
@@ -79,7 +81,8 @@ test('自由提问：查资料类 422 不检索；过短 400；跨站 403；未�
   const deps={
     planQuestion:async()=>({kind:'informational',queries:['x'],focusTerms:[],excerptTerms:[],planned:true}),
     fetchTopic:async()=>assert.fail('不应检索'),
-    classify:async()=>assert.fail('不应分类')
+    classify:async()=>assert.fail('不应分类'),
+    extractConditions:async()=>assert.fail('不应整理条件')
   };
   await serve(createServer(env,deps),async base=>{
     const info=await ask(base,{question:'上海落户需要什么条件'});
@@ -103,7 +106,8 @@ test('自由提问：检索为空时提示换个说法，日志不含问题原�
     log:line=>logs.push(line),
     planQuestion:async q=>({kind:'opinion',queries:[q],focusTerms:[],excerptTerms:[],planned:true}),
     fetchTopic:async()=>{throw Object.assign(new Error('本次没有检索到可用内容'),{empty:true});},
-    classify:async records=>records
+    classify:async records=>records,
+    extractConditions:async()=>({status:'complete',conditions:[]})
   };
   await serve(createServer(env,deps),async base=>{
     const res=await ask(base,{question:'一个没人问过的奇怪问题'});

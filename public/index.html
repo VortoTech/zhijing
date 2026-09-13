@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>知镜 · 找到高赞回答下的「但是」</title>
-<meta name="description" content="输入你正在纠结的选择，知镜在知乎评论区找出读者的反驳和补充前提，挂回到它回应的那句话上。">
+<title>知镜 · 做选择前，先确认这几件事</title>
+<meta name="description" content="输入你正在纠结的选择，知镜读完知乎上相关的回答和评论，整理出决定你该怎么选的条件，每条都附真人原话。">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -12,11 +12,11 @@
   <header class="hero">
     <p class="brand">知镜<span class="dot">.</span></p>
     <h1>高赞回答，不一定适用于你。</h1>
-    <p class="lede">输入你正在纠结的选择。知镜去知乎找相关的高赞回答，把评论区里读者说的「但是」——反驳、补充前提、答非所问——挂回到它回应的那句话上。每条都是读者原话，AI 不改一个字。</p>
+    <p class="lede">输入你正在纠结的选择。知镜读完知乎上相关的回答和评论，整理出「决定你该怎么选」的几个条件，每条都附真人原话；还会把评论区里读者的反驳挂回到它回应的那句话上。原话一字不改，可以逐条核对。</p>
     <form id="ask-form" class="ask" role="search" novalidate>
       <label for="q" class="sr-only">你在纠结什么</label>
       <input id="q" name="q" type="search" maxlength="80" autocomplete="off" enterkeyhint="search" placeholder="你在纠结什么？比如：考研还是直接工作">
-      <button id="ask-btn" class="btn big" type="submit">找评论区的「但是」</button>
+      <button id="ask-btn" class="btn big" type="submit">找出关键条件</button>
     </form>
     <p id="ask-note" class="note" aria-live="polite"></p>
     <div class="examples">
@@ -28,9 +28,11 @@
   <div id="status" role="status" aria-live="polite"></div>
   <section id="results" aria-label="结果" aria-busy="false">
     <div id="result-head"></div>
+    <div id="conditions"></div>
+    <div id="objections-head"></div>
     <div id="list-bar" class="list-bar"></div>
     <div id="list" class="list"></div>
-    <p id="result-foot" class="note foot" hidden>有人提出异议，不代表异议成立；没发现异议，也不代表回答适用于你。判断留给你。</p>
+    <p id="result-foot" class="note foot" hidden>条件由 AI 归纳，只是提醒你先想清楚什么，不替你做决定。有人提出异议，不代表异议成立；没发现异议，也不代表回答适用于你。</p>
   </section>
   <details id="data-details" class="data-details" hidden>
     <summary>数据来源与分析说明</summary>

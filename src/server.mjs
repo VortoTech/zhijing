@@ -8,6 +8,7 @@ import {fetchTopic} from './pipeline/fetch.mjs';
 import {classify} from './pipeline/classify.mjs';
 import {buildReadingMap,ORDERS} from './engine.mjs';
 import {normalizeQuestion,planQuestion,askTopic,widenFocus} from './ask.mjs';
+import {extractConditions} from './pipeline/conditions.mjs';
 
 const root=new URL('../',import.meta.url);
 const topics=await loadTopics();
@@ -57,6 +58,14 @@ async function loadSnapshot(topicId){
   return JSON.parse(raw);
 }
 
+// 离线样本的条件由 scripts/build-conditions.mjs 预先生成；没有文件时不展示清单。
+async function loadConditions(topicId){
+  try{
+    const file=JSON.parse(await readFile(new URL(`data/conditions-${topicId}.json`,root),'utf8'));
+    return {status:file.status,conditions:file.conditions,builtAt:file.builtAt,offline:true};
+  }catch{return null;}
+}
+
 function validateRequest(input){
   if(!input||typeof input!=='object'||Array.isArray(input))throw new Error('请求格式不正确');
   if(typeof input.topicId!=='string')throw new Error('缺少话题');
@@ -95,6 +104,7 @@ function incompleteCount(dataset){
 
 export function createServer(env=process.env,dependencies={fetchTopic,classify}){
   const plan=dependencies.planQuestion||planQuestion;
+  const extract=dependencies.extractConditions||extractConditions;
   const log=line=>(dependencies.log||console.info)(line);
   let inFlight=0;
   const datasets=new Map();
@@ -110,7 +120,7 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
     try{
       const dataset=await entry.pending;
       // 部分结果短时缓存，避免公开访问时每个访客都重跑模型；「重新分析」带 refresh 可越过。
-      if((dataset.meta.failedQueries||incompleteCount(dataset))&&datasets.get(key)===entry){
+      if((dataset.meta.failedQueries||incompleteCount(dataset)||dataset.conditions?.status==='failed')&&datasets.get(key)===entry){
         entry.partial=true;entry.expires=Date.now()+PARTIAL_TTL_MS;
       }
       return dataset;
@@ -122,7 +132,7 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
     return cached(`${topic.id}:${mode}`,{refresh,live:mode==='live'&&configuration(env).liveReady},async()=>{
       if(mode==='snapshot'){
         const snapshot=await loadSnapshot(topic.id);
-        return {...snapshot,meta:{...snapshot.meta,mode}};
+        return {...snapshot,conditions:await loadConditions(topic.id),meta:{...snapshot.meta,mode}};
       }
       if(!configuration(env).liveReady)throw new Error('实时模式未配置');
       const fetched=await dependencies.fetchTopic(topic,env);
@@ -140,8 +150,12 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
       if(planned.kind==='informational')throw Object.assign(new Error('信息查询类问题'),{informational:true});
       const fetched=await dependencies.fetchTopic(askTopic(question,planned),env);
       const topic=widenFocus(askTopic(question,planned),fetched.records);
-      const records=await dependencies.classify(fetched.records,topic,env);
-      return {topic,records,meta:{...fetched.meta,mode:'live',question,sessionKey:`ask:${question}`,planned:planned.planned,provenance:{
+      // 条件整理与异议归类并行，不增加等待时间。
+      const [records,conditions]=await Promise.all([
+        dependencies.classify(fetched.records,topic,env),
+        extract(fetched.records,topic,env)
+      ]);
+      return {topic,records,conditions,meta:{...fetched.meta,mode:'live',question,sessionKey:`ask:${question}`,planned:planned.planned,provenance:{
         text:'知乎本次检索原文；最多取每条内容的 3 条精选评论。',
         objections:'模型归类并校验引用来源。引用存在不代表异议关系或内容已被验证。'
       }}};
@@ -161,8 +175,8 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
     try{
       const dataset=await getAnswer(input.question,input.refresh);
       // 日志不记录问题原文、正文或评论。
-      log(JSON.stringify({event:'ask',requestId,durationMs:Date.now()-started,records:dataset.records.length,incomplete:incompleteCount(dataset),failedQueries:dataset.meta.failedQueries||0,planned:dataset.meta.planned}));
-      return send(res,200,buildReadingMap(dataset.records,{topic:dataset.topic,order:'attention',meta:{...dataset.meta,requestId,pilot:true}}));
+      log(JSON.stringify({event:'ask',requestId,durationMs:Date.now()-started,records:dataset.records.length,incomplete:incompleteCount(dataset),failedQueries:dataset.meta.failedQueries||0,planned:dataset.meta.planned,conditions:dataset.conditions?.conditions.length??0,conditionsStatus:dataset.conditions?.status||null}));
+      return send(res,200,{...buildReadingMap(dataset.records,{topic:dataset.topic,order:'attention',meta:{...dataset.meta,requestId,pilot:true}}),conditions:dataset.conditions||null});
     }catch(error){
       const reason=error.quota?'quota':error.informational?'informational':error.empty?'empty':'upstream';
       log(JSON.stringify({event:'ask_failed',requestId,durationMs:Date.now()-started,reason}));
@@ -231,13 +245,13 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
         try{
           const dataset=await getDataset(topic,input.mode,input.refresh);
           log(JSON.stringify({event:'reading_map',requestId,topicId:topic.id,mode:input.mode,durationMs:Date.now()-started,records:dataset.records.length,incomplete:incompleteCount(dataset),failedQueries:dataset.meta.failedQueries||0}));
-          return send(res,200,buildReadingMap(dataset.records,{
+          return send(res,200,{...buildReadingMap(dataset.records,{
             topic,
             situation:input.situation,
             order:input.order,
             conditions:input.conditions,
             meta:{...dataset.meta,requestId,pilot:input.mode==='live'&&topic.liveStatus==='pilot'}
-          }));
+          }),conditions:dataset.conditions||null});
         }catch(error){
           log(JSON.stringify({event:'reading_map_failed',requestId,topicId:topic.id,mode:input.mode,durationMs:Date.now()-started}));
           if(error.quota)return send(res,429,{error:QUOTA_MESSAGE});
