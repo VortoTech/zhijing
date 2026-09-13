@@ -378,6 +378,75 @@ function renderAccount(me,note=''){
   }
   if(note)parts.unshift(el('span',{class:'account-note',text:note}));
   box.replaceChildren(...parts);
+  if(me.user)loadMine();
+  else{$('mine').hidden=true;clear($('mine'));}
+}
+
+// ── 登录后：我的知乎收藏（挑一个问题对比 + 收藏体检） ──
+const mine={items:null,error:'',relogin:false,checkup:null,checking:false,checkError:''};
+async function loadMine(){
+  Object.assign(mine,{items:null,error:'',relogin:false,checkup:null,checking:false,checkError:''});
+  $('mine').hidden=false;
+  $('mine').replaceChildren(el('p',{class:'note',text:'正在读取你最近的知乎收藏…'}));
+  try{
+    const res=await fetch('/api/my/collections',{signal:AbortSignal.timeout(20000)});
+    const data=await res.json().catch(()=>({}));
+    if(res.ok)mine.items=data.items||[];
+    else{mine.error=data.error||'暂时读不到你的收藏。';mine.relogin=!!data.relogin;}
+  }catch{mine.error='暂时读不到你的收藏。';}
+  renderMine();
+}
+const reloginLink=()=>el('a',{href:'/auth/login',class:'link-btn',text:'重新登录'});
+function checkupChip(item){
+  if(item.status==='pushback'){
+    const cond=onlyConditions(item.objections);
+    return el('span',{class:'pb-chip'+(cond?' cond':''),text:cond?'有人补了前提':'有人不同意'});
+  }
+  const label={incomplete:'分析未完成',quiet:'评论区没发现异议',no_comments:'没有取到评论',unmatched:'没找到这条的评论区'}[item.status];
+  return el('span',{class:'chip t-no_signal',text:label});
+}
+function checkupView(result){
+  return el('div',{class:'checkup'},[
+    el('p',{class:'result-summary',text:`检查了最近 ${result.checked} 条收藏：找到 ${result.matched} 条的评论区，其中 ${result.pushback} 条有读者当场不同意或补了前提。`}),
+    el('p',{class:'note',text:'做法：用每条回答里的一句话去知乎搜索，对上了才拿得到精选评论（每条最多 3 条），对不上的如实标出。反驳由模型挑出，展示读者原话供你判断；有人反驳不代表反驳成立。'}),
+    el('ul',{class:'checkup-list'},result.items.map(item=>el('li',{class:'checkup-item'},[
+      el('div',{class:'checkup-top'},[
+        checkupChip(item),
+        el('a',{href:item.url,target:'_blank',rel:'noopener noreferrer',class:'checkup-title',text:item.title}),
+        el('span',{class:'meta',text:(item.author?item.author+' · ':'')+item.likeCount+' 赞'})
+      ]),
+      item.objections.length?pushbackBlock(item.objections.map(o=>({...o,direct:false}))):null
+    ])))
+  ]);
+}
+function renderMine(){
+  const box=$('mine');
+  const head=el('h2',{id:'mine-title',class:'mine-title',text:'我的知乎收藏'});
+  if(mine.error){box.replaceChildren(head,el('p',{class:'note'},[mine.error,' ',mine.relogin?reloginLink():null]));return;}
+  const items=mine.items||[];
+  if(!items.length){box.replaceChildren(head,el('p',{class:'note',text:'最近的收藏里没有回答或文章。'}));return;}
+  const pick=el('div',{class:'mine-pick'},[
+    el('p',{class:'note',text:'从你收藏的内容里挑一个问题，对比两边：'}),
+    el('div',{class:'chips'},items.slice(0,6).map(item=>button(item.title.length>28?item.title.slice(0,28)+'…':item.title,()=>{
+      try{load(viewFor(normalizeQuestion(item.title.slice(0,80))));}catch(error){$('ask-note').textContent=error.message;}
+    },{class:'chip-btn',title:item.title})))
+  ]);
+  const check=el('div',{class:'mine-check'},[
+    mine.checkup?null:el('p',{class:'note',text:`收藏体检：看看你最近收藏的 ${Math.min(items.length,20)} 条内容，评论区有没有人当场不同意。大约需要 30–60 秒。`}),
+    mine.checkup?null:button(mine.checking?'正在体检…':'体检我的收藏',runMineCheckup,{class:'btn small',disabled:mine.checking}),
+    mine.checkError?el('p',{class:'note warn'},[mine.checkError,' ',mine.relogin?reloginLink():null]):null
+  ]);
+  box.replaceChildren(head,pick,check,mine.checkup?checkupView(mine.checkup):null);
+}
+async function runMineCheckup(){
+  mine.checking=true;mine.checkError='';renderMine();
+  try{
+    const res=await fetch('/api/my/checkup',{method:'POST',headers:{'content-type':'application/json'},body:'{}',signal:AbortSignal.timeout(150000)});
+    const data=await res.json().catch(()=>({}));
+    if(res.ok)mine.checkup=data;
+    else{mine.checkError=data.error||'收藏体检没有完成，请稍后再试。';mine.relogin=!!data.relogin;}
+  }catch{mine.checkError='收藏体检没有完成，请稍后再试。';}
+  mine.checking=false;renderMine();
 }
 async function loadAccount(){
   const params=new URLSearchParams(location.search);

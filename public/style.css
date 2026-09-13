@@ -323,6 +323,20 @@ progress{width:100%;height:12px;accent-color:var(--accent);}
 }
 .login-btn:hover{background:var(--accent-soft);}
 
+/* ── 登录后：我的知乎收藏 ───────────────────────── */
+.mine{margin:14px 0 6px;padding:14px 16px;background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);}
+.mine-title{font-size:16px;margin:0 0 4px;}
+.mine .note{margin:6px 0;}
+.mine-pick .chips{margin-top:6px;}
+.mine-check{margin-top:10px;}
+.checkup{margin-top:12px;border-top:1px dashed var(--line);padding-top:10px;}
+.checkup-list{list-style:none;margin:8px 0 0;padding:0;display:flex;flex-direction:column;gap:12px;}
+.checkup-top{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;}
+.checkup-title{color:var(--ink);font-weight:600;font-size:14.5px;text-decoration:none;}
+.checkup-title:hover{text-decoration:underline;}
+.checkup-item .pb-chip{margin-left:0;}
+.checkup-item .pushback{margin:6px 0 0;}
+
 /* ── 精简：结论先行，原话点开再看 ───────────────── */
 .hero h1{font-size:26px;}
 .lede{margin-bottom:14px;}

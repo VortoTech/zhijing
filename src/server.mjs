@@ -10,6 +10,7 @@ import {buildReadingMap,ORDERS} from './engine.mjs';
 import {normalizeQuestion,planQuestion,askTopic,widenFocus} from './ask.mjs';
 import {extractComparison} from './pipeline/compare.mjs';
 import {createOAuth,parseCookies} from './oauth.mjs';
+import {fetchCollections,runCheckup} from './userdata.mjs';
 
 const root=new URL('../',import.meta.url);
 const topics=await loadTopics();
@@ -115,6 +116,9 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
   const plan=dependencies.planQuestion||planQuestion;
   const extract=dependencies.extractComparison||extractComparison;
   const oauth=dependencies.oauth||createOAuth(env);
+  const readCollections=dependencies.fetchCollections||fetchCollections;
+  const checkup=dependencies.runCheckup||runCheckup;
+  const checkups=new Map(); // 用户标识 → {expires, pending}：同一用户 15 分钟内复用体检结果
   const log=line=>(dependencies.log||console.info)(line);
   let inFlight=0;
   const datasets=new Map();
@@ -235,6 +239,51 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
       if(req.method==='GET'&&url.pathname==='/api/me'){
         const user=oauth.available?oauth.current(parseCookies(req.headers.cookie)):null;
         return send(res,200,{available:oauth.available,user:user?{name:user.name,headline:user.headline,avatar:user.avatar}:null});
+      }
+      // ── 登录用户的收藏：读取（从收藏里挑问题）与体检（评论区有没有人当场不同意） ──
+      if((req.method==='GET'&&url.pathname==='/api/my/collections')||(req.method==='POST'&&url.pathname==='/api/my/checkup')){
+        if(req.method==='POST'&&req.headers.origin&&new URL(req.headers.origin).host!==req.headers.host)return send(res,403,{error:'请求来源不匹配'});
+        const cookies=parseCookies(req.headers.cookie);
+        const user=oauth.available?oauth.current(cookies):null;
+        if(!user)return send(res,401,{error:'请先用知乎登录。'});
+        const token=oauth.accessToken(cookies);
+        if(!token)return send(res,401,{error:'知乎授权已过期（有效期 1 小时），重新登录后才能读取收藏。',relogin:true});
+        if(!configuration(env).zhihuReady)return send(res,503,{error:'读取收藏暂不可用。'});
+        const authFailed=()=>{oauth.dropToken(cookies);return send(res,401,{error:'知乎授权已失效，请重新登录。',relogin:true});};
+
+        if(url.pathname==='/api/my/collections'){
+          try{
+            const items=await readCollections(env,token);
+            log(JSON.stringify({event:'collections',count:items.length}));
+            return send(res,200,{items:items.map(({summary,...rest})=>rest)});
+          }catch(error){
+            log(JSON.stringify({event:'collections_failed',reason:error.reason||'upstream'}));
+            return error.reason==='auth'?authFailed():send(res,503,{error:'暂时读不到你的收藏，请稍后再试。'});
+          }
+        }
+
+        if(!askReady(env))return send(res,503,{error:'收藏体检暂未开放。'});
+        const key=user.uid||user.hashId;
+        const hit=checkups.get(key);
+        if(hit&&Date.now()<hit.expires){
+          try{return send(res,200,await hit.pending);}catch{}
+        }
+        if(inFlight>=4)return send(res,429,{error:'当前请求较多，请稍后再试。'});
+        if(!liveBudget.take())return send(res,429,{error:QUOTA_MESSAGE});
+        inFlight++;
+        const started=Date.now();
+        const entry={expires:Date.now()+15*60*1000};
+        entry.pending=(async()=>checkup(await readCollections(env,token),env))();
+        checkups.set(key,entry);
+        try{
+          const result=await entry.pending;
+          log(JSON.stringify({event:'checkup',durationMs:Date.now()-started,checked:result.checked,matched:result.matched,pushback:result.pushback}));
+          return send(res,200,result);
+        }catch(error){
+          if(checkups.get(key)===entry)checkups.delete(key);
+          log(JSON.stringify({event:'checkup_failed',reason:error.reason||'upstream'}));
+          return error.reason==='auth'?authFailed():send(res,503,{error:'收藏体检暂时不可用，请稍后再试。'});
+        }finally{inFlight--;}
       }
       if(req.method==='POST'&&url.pathname==='/auth/logout'){
         if(req.headers.origin&&new URL(req.headers.origin).host!==req.headers.host)return send(res,403,{error:'请求来源不匹配'});

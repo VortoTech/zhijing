@@ -145,9 +145,18 @@ data/
 
 - `GET /auth/login` → 跳转 `openapi.zhihu.com/authorize`；回调路径取自 `ZHIHU_OAUTH_REDIRECT_URI`（建议 `/auth/callback`），同时接受 `authorization_code` 与 `code`；`POST /auth/logout` 退出；`GET /api/me` 返回 `{available, user}`。
 - `state` 用密码学随机数生成、绑定当前浏览器（`zj_login` Cookie）、10 分钟过期、回调时先原子消费再校验；重复、缺失、其他浏览器、过期一律拒绝。
-- App Key 只在服务端换 token；OAuth access_token 只用来读一次 `/user`，读完即弃、不存储；浏览器只持有随机会话号 `zj_sid`（HttpOnly、SameSite=Lax，HTTPS 下 Secure），会话存在进程内存，7 天有效，重启后需重新登录。
+- App Key 只在服务端换 token；OAuth access_token 只存服务端内存、最多 1 小时（知乎不给刷新 token），用来读该用户授权的收藏，从不发给浏览器；过期或被知乎拒绝即清空并提示重新登录，不回退到 Access Secret 本人身份。浏览器只持有随机会话号 `zj_sid`（HttpOnly、SameSite=Lax，HTTPS 下 Secure），会话存在进程内存，7 天有效，重启后需重新登录。
 - `uid` 超出 JS 安全整数，解析前改写为字符串无损保存；头像只接受 `*.zhimg.com`；日志只记登录成功/失败原因，不记用户标识和凭据。
 - 三项配置缺一则登录关闭，页面不显示登录按钮。测试全部使用模拟的知乎接口，**真实授权联调要在拿到凭据后由本人完成**。
+
+## 登录后：我的知乎收藏（2026-09-13）
+
+登录后首页多一个「我的知乎收藏」区块（`src/userdata.mjs`，接口用 Access Secret + `X-OAuth-Token` 读 `/api/v1/user/collections`，只读）：
+
+- **从收藏里挑一个问题对比**：`GET /api/my/collections` 返回最近收藏的回答和文章（不带摘要），点一条就用它的标题做两边对比。
+- **收藏体检**：`POST /api/my/checkup` 检查最近最多 20 条收藏——用每条回答摘要里的一句话去知乎搜索，对上了才拿到精选评论，再走同一套异议归类和逐字校验；对不上、没评论、没发现异议分别如实标出，有人不同意的排在前面。计 1 次每日实时次数，同一用户 15 分钟内复用结果。
+- 为什么用摘要里的一句话：9/13 用 3 个问题各前 20 条回答（经 `question_answers` 取得，不经过我们的搜索）实测，用问题标题搜索只对上 10%，用回答里的一句话对上 65%，对上的几乎都带精选评论。
+- 文档写收藏接口返回「公开范围内」的数据；用本人 Access Secret 能读到私密收藏夹，别的用户授权后能否读到私密收藏，要等真实登录后实测。
 
 ## 差异化：原话下面挂评论区的反驳（2026-09-13）
 

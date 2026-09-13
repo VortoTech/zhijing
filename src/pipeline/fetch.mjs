@@ -40,7 +40,7 @@ export async function getJSON(url,options={}){
   return JSON.parse(Buffer.concat(chunks).toString('utf8'));
 }
 
-async function searchOne(query,env){
+export async function searchOne(query,env){
   const url=new URL(ZHIHU_SEARCH);
   url.search=new URLSearchParams({Query:query,Count:String(COUNT_PER_QUERY)});
   const body=await getJSON(url,{

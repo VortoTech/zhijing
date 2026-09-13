@@ -67,6 +67,24 @@ test('回调：正确 state 登录成功；重复、缺失、其他浏览器、�
   assert.equal(zhihu.calls.length,2);
 });
 
+test('会话里保留 token 最多 1 小时、只在服务端；过期后身份仍在、token 为空；被拒后可清空',async()=>{
+  let clock=0;
+  const oauth=createOAuth(env,{request:fakeZhihu().request,now:()=>clock});
+  const {location,cookie}=oauth.begin();
+  const state=new URL(location).searchParams.get('state');
+  const {cookies}=await oauth.complete(new URLSearchParams({state,authorization_code:'c'}),{zj_login:cookieValue(cookie,'zj_login')});
+  const sid=cookieValue(cookies,'zj_sid');
+  assert.equal(oauth.accessToken({zj_sid:sid}),'tok-abc');
+  oauth.dropToken({zj_sid:sid});
+  assert.equal(oauth.accessToken({zj_sid:sid}),null);
+  const again=oauth.begin();
+  const {cookies:second}=await oauth.complete(new URLSearchParams({state:new URL(again.location).searchParams.get('state'),authorization_code:'c'}),{zj_login:cookieValue(again.cookie,'zj_login')});
+  const sid2=cookieValue(second,'zj_sid');
+  clock+=3601*1000;
+  assert.equal(oauth.accessToken({zj_sid:sid2}),null);
+  assert.equal(oauth.current({zj_sid:sid2}).name,'测试用户');
+});
+
 test('换 token 或读用户失败时不建立会话',async()=>{
   for(const zhihu of [fakeZhihu({tokenBody:{code:40001,message:'invalid'}}),fakeZhihu({userText:'{"code":404,"data":"User don\'t exist"}'})]){
     const oauth=createOAuth(env,zhihu);

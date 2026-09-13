@@ -2,13 +2,15 @@ import {randomBytes} from 'node:crypto';
 
 // 知乎登录（黑客松 OAuth）。协议见知乎 skill 包 references/hackathon-oauth.md 与 oauth.md：
 // 授权 → 回调带 authorization_code 与 state → 后端用 app_id/app_key 换 access_token → GET /user 读基础信息。
-// 安全：state 一次性、绑定浏览器、10 分钟过期；App Key 只在服务端；access_token 读完用户信息即弃，不存储；
+// 安全：state 一次性、绑定浏览器、10 分钟过期；App Key 只在服务端；access_token 只存服务端内存、最多 1 小时，
+// 用来读该用户授权的收藏，从不发给浏览器；
 // 浏览器只持有随机会话号（HttpOnly Cookie）。
 const AUTHORIZE_URL='https://openapi.zhihu.com/authorize';
 const TOKEN_URL='https://openapi.zhihu.com/access_token';
 const USER_URL='https://openapi.zhihu.com/user';
 const STATE_TTL_MS=10*60*1000;
 const SESSION_TTL_MS=7*24*3600*1000;
+const TOKEN_TTL_MAX_MS=3600*1000;
 const MAX_PENDING=5000;
 
 export function oauthConfig(env=process.env){
@@ -113,9 +115,11 @@ export function createOAuth(env=process.env,{request=fetch,now=Date.now}={}){
       const user=userResponse.ok?parseUser(await userResponse.text()):null;
       if(!user)throw fail('user','读取知乎用户信息失败');
 
+      const expiresIn=Number(tokenBody?.expires_in??tokenBody?.data?.expires_in)*1000;
+      const tokenTtl=Math.min(expiresIn>0?expiresIn:TOKEN_TTL_MAX_MS,TOKEN_TTL_MAX_MS);
       sweep();
       const sid=randomToken();
-      sessions.set(sid,{user,expires:now()+SESSION_TTL_MS});
+      sessions.set(sid,{user,token:accessToken,tokenExpires:now()+tokenTtl,expires:now()+SESSION_TTL_MS});
       return {user,cookies:[cookie('zj_sid',sid,SESSION_TTL_MS/1000),cookie('zj_login','',0)]};
     },
 
@@ -124,6 +128,18 @@ export function createOAuth(env=process.env,{request=fetch,now=Date.now}={}){
       if(!session)return null;
       if(session.expires<now()){sessions.delete(cookies.zj_sid);return null;}
       return session.user;
+    },
+
+    // 只在服务端使用；过期或被知乎拒绝后清空，不自动续期，也不回退到 Access Secret 本人身份。
+    accessToken(cookies){
+      const session=cookies.zj_sid?sessions.get(cookies.zj_sid):null;
+      if(!session||session.expires<now()||!session.token||session.tokenExpires<now())return null;
+      return session.token;
+    },
+
+    dropToken(cookies){
+      const session=cookies.zj_sid?sessions.get(cookies.zj_sid):null;
+      if(session)session.token=null;
     },
 
     end(cookies){
