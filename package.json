@@ -12,10 +12,10 @@
     "dev": "node --watch --env-file-if-exists=.env.local src/server.mjs",
     "build:snapshot": "node scripts/build-snapshot.mjs",
     "analyze": "node scripts/analyze-sample.mjs",
-    "build:conditions": "node --env-file-if-exists=.env.local scripts/build-conditions.mjs",
+    "build:comparison": "node --env-file-if-exists=.env.local scripts/build-comparison.mjs",
     "smoke": "node scripts/smoke.mjs",
     "evaluate": "node scripts/evaluate.mjs",
     "test": "node --test tests/*.test.mjs",
-    "check": "node --check src/server.mjs && node --check src/engine.mjs && node --check src/topics.mjs && node --check src/ask.mjs &&node --check src/pipeline/fetch.mjs && node --check src/pipeline/extract.mjs && node --check src/pipeline/classify.mjs && node --check src/pipeline/verify.mjs && node --check src/pipeline/conditions.mjs && node --check scripts/build-conditions.mjs &&node --check src/evaluation.mjs && node --check scripts/evaluate.mjs && node --check scripts/smoke.mjs && node --check scripts/build-snapshot.mjs && node --check scripts/analyze-sample.mjs && node --check public/app.js && node --check public/session.js"
+    "check": "node --check src/server.mjs && node --check src/engine.mjs && node --check src/topics.mjs && node --check src/ask.mjs &&node --check src/pipeline/fetch.mjs && node --check src/pipeline/extract.mjs && node --check src/pipeline/classify.mjs && node --check src/pipeline/verify.mjs && node --check src/pipeline/compare.mjs && node --check scripts/build-comparison.mjs &&node --check src/evaluation.mjs && node --check scripts/evaluate.mjs && node --check scripts/smoke.mjs && node --check scripts/build-snapshot.mjs && node --check scripts/analyze-sample.mjs && node --check public/app.js && node --check public/session.js"
   }
 }

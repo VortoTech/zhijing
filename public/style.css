@@ -285,7 +285,34 @@ progress{width:100%;height:12px;accent-color:var(--accent);}
 }
 .foot{margin-top:18px;}
 
-/* ── 先确认这几件事 ─────────────────────────────── */
+/* ── 对比图：两个选项固定配色，贯穿全页 ─────────── */
+:root{--opt-a:#2F6B5E;--opt-a-bg:#EAF2EF;--opt-b:#9A5516;--opt-b-bg:#FBF0E3;}
+.opt{font-weight:700;color:var(--opt-a);}
+.opt.b{color:var(--opt-b);}
+.compare-block{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  padding:16px 18px 10px;margin-bottom:12px;
+}
+.sides{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:12px;}
+.side{border-top:3px solid var(--opt-a);padding-top:10px;min-width:0;}
+.side.b{border-top-color:var(--opt-b);}
+.side-title{font-size:15px;margin:0 0 10px;}
+.reason{margin:0 0 12px;}
+.reason-label{font-size:14.5px;font-weight:600;margin:0 0 6px;}
+.forks{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:18px;}
+.fork-label{font-size:16px;margin:0 0 8px;line-height:1.5;}
+.branches{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+.branch{
+  min-width:0;border-radius:var(--radius-sm);padding:10px 12px 4px;
+  background:var(--opt-a-bg);border:1px solid rgba(47,107,94,.28);
+}
+.branch.b{background:var(--opt-b-bg);border-color:rgba(154,85,22,.28);}
+.branch-when{margin:0 0 8px;font-size:14px;font-weight:600;}
+.branch-when .arrow{color:var(--ink-3);margin:0 6px;font-weight:400;}
+.branch .evidence blockquote{background:rgba(255,255,255,.75);}
+.side.b .evidence blockquote,.branch.b .evidence blockquote{border-left-color:var(--opt-b);}
+#sources-head{margin-top:26px;}
+
 .section-title{font-size:18px;margin:0 0 4px;}
 .conditions{
   background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
@@ -320,6 +347,7 @@ progress{width:100%;height:12px;accent-color:var(--accent);}
 
 @media (max-width:640px){
   .hero h1{font-size:24px;}
+  .sides,.branches{grid-template-columns:1fr;}
   .ask{flex-direction:column;}
   .btn.big{width:100%;}
   .wrap{padding:16px 12px 48px;}

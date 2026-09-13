@@ -1,0 +1,333 @@
+{
+  "topicId": "first-job",
+  "builtAt": "2026-09-13T05:50:28.566Z",
+  "model": "deepseek-v4-flash",
+  "question": "第一份工作选高薪小公司还是低薪大厂",
+  "curated": "分叉 1 第一条分支的说明由人工改写（模型原文「无经济压力可接受低薪」与所指选项矛盾），原话与编号未动",
+  "status": "complete",
+  "options": [
+    "高薪小公司",
+    "低薪大厂"
+  ],
+  "sides": [
+    {
+      "option": "高薪小公司",
+      "reasons": [
+        {
+          "label": "成长快、全链路参与",
+          "evidence": [
+            {
+              "recordId": "-4697769236779248759",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "小公司那个，可以写主导了某某系统从0到1，用户体量从2万做到10万。"
+            },
+            {
+              "recordId": "8583121547066077955",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "在小公司，你学的是全链路、多面手、解决问题的能力。"
+            }
+          ]
+        },
+        {
+          "label": "薪资体现当下价值",
+          "evidence": [
+            {
+              "recordId": "2839573207696871495",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "假设有两个同样级别的公司A和B，A给你年薪40W，B给你年薪45W，意思就是A公司觉得你值40W，B公司觉得你值45W，你希望自己被认为值40W还是45W呢？"
+            },
+            {
+              "recordId": "2839573207696871495",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "公司给你的薪资，就是他们心目中你的价值，你肯定不能贬低自我把，你肯定应该选认可你更高价值的那一个雇主，对吧。"
+            }
+          ]
+        },
+        {
+          "label": "可能获得爆发式成长",
+          "evidence": [
+            {
+              "recordId": "4836585803707084913",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "小公司给的是“爆发式成长的可能性”。"
+            },
+            {
+              "recordId": "4836585803707084913",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "你的成长速度，也可能比在大厂快得多。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "option": "低薪大厂",
+      "reasons": [
+        {
+          "label": "平台背书简历值钱",
+          "evidence": [
+            {
+              "recordId": "-4055504387468486848",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "在大厂等一些知名企业的潜在价值是不可计量的，有平台背书，这份经历的信任度就是你的敲门砖。"
+            },
+            {
+              "recordId": "-4055504387468486848",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "在职场上，有名企背景工作经验的人能取得高薪与好机会，这影响的将是整个职业生涯。"
+            }
+          ]
+        },
+        {
+          "label": "培训体系完善成长规范",
+          "evidence": [
+            {
+              "recordId": "-1203039761252154073",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "大型公司有完善的新人培养机制，它为公司的战略发展储备人才，输入新鲜且有活力的“血液”保障企业可持续发展，不同层级的员工都有与之匹配的培养体系，保障人才的连续性和不断层。"
+            },
+            {
+              "recordId": "-1203039761252154073",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "这样的机制非常有利应届毕业生适应职场，角色和思维快速转变，业务技能及个人能力得到系统的培养和提升，减少初入职场的迷茫和焦虑。"
+            }
+          ]
+        },
+        {
+          "label": "大厂背景跳槽通行证",
+          "evidence": [
+            {
+              "recordId": "8939282175577742094",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "总而言之，对于职场新人来说，大厂的背景很有用，有了大厂工作经验，你就拥有了进入其他大厂的通行证，而一毕业就去小公司的话，在我看来就是赌博，一旦在这家公司发展不好，以后前途就很堪忧！"
+            },
+            {
+              "recordId": "-4321312827874843485",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "在大平台干三年，跳出去很容易；"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "forks": [
+    {
+      "label": "你能否承受经济压力？",
+      "branches": [
+        {
+          "when": "家里能兜底，能赌波动",
+          "lean": "高薪小公司",
+          "evidence": [
+            {
+              "recordId": "745966118022541599",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "如果没有经济压力，家庭可以给予相应的支持，完整排序为：成长空间>平台>薪资。"
+            },
+            {
+              "recordId": "8717137609931460003",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "第二、想清楚你的容错半径有多大，如果你家里能替你兜底三年，你可以去赌高波动，如果你下个月就要往家里寄钱，你必须先要现金流"
+            }
+          ]
+        },
+        {
+          "when": "经济压力大需稳定收入",
+          "lean": "低薪大厂",
+          "evidence": [
+            {
+              "recordId": "8583121547066077955",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "如果你家境一般、抗风险能力弱、需要一份稳定的收入来支撑自己在大城市立足，那大厂是更稳妥的选择。"
+            },
+            {
+              "recordId": "745966118022541599",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "如果自身经济负担过重，需要独自承担房租、生活开支，甚至补贴家用，完整排序为：成长空间>薪资>平台。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "你更看重确定性还是可能性？",
+      "branches": [
+        {
+          "when": "追求快速成长和机会",
+          "lean": "高薪小公司",
+          "evidence": [
+            {
+              "recordId": "8583121547066077955",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "小公司给的是可能性——更快的成长、更广的接触面、更早参与核心业务的机会。"
+            },
+            {
+              "recordId": "4836585803707084913",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "小公司给的是“爆发式成长的可能性”。"
+            }
+          ]
+        },
+        {
+          "when": "追求稳定和规范",
+          "lean": "低薪大厂",
+          "evidence": [
+            {
+              "recordId": "8583121547066077955",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "大厂给的是确定性——稳定的薪资、规范的流程、成熟的培训体系、有分量的简历背书。"
+            },
+            {
+              "recordId": "4836585803707084913",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "大厂给的是“确定性溢价” 。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "你能否接受螺丝钉岗位？",
+      "branches": [
+        {
+          "when": "希望主导核心业务",
+          "lean": "高薪小公司",
+          "evidence": [
+            {
+              "recordId": "-4697769236779248759",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "小公司那个，可以写主导了某某系统从0到1，用户体量从2万做到10万。"
+            },
+            {
+              "recordId": "8583121547066077955",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "小公司给的是可能性——更快的成长、更广的接触面、更早参与核心业务的机会。"
+            }
+          ]
+        },
+        {
+          "when": "能接受边缘或螺丝钉岗",
+          "lean": "低薪大厂",
+          "evidence": [
+            {
+              "recordId": "8939282175577742094",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "大厂虽然是所谓边缘岗，但是有机会可以转部门转职位啊，就像我们考大学一样，我们可以先选个好学校，专业不行，进去以后通过努力可以转专业啊！"
+            },
+            {
+              "recordId": "4836585803707084913",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "但代价是：你可能成为一颗“精致的螺丝钉”。"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "你是否有明确职业方向？",
+      "branches": [
+        {
+          "when": "想探索多方向积累经验",
+          "lean": "高薪小公司",
+          "evidence": [
+            {
+              "recordId": "8583121547066077955",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "在小公司，你学的是全链路、多面手、解决问题的能力。"
+            },
+            {
+              "recordId": "4836585803707084913",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "在小公司，你很可能一人多岗——今天做运营，明天盯数据，后天跟客户聊需求。"
+            }
+          ]
+        },
+        {
+          "when": "打算长期深耕一个行业",
+          "lean": "低薪大厂",
+          "evidence": [
+            {
+              "recordId": "5903928353375567854",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "打算长期深耕一个行业，大厂的品牌背书、流程规范、人脉圈层是实打实的资产。"
+            },
+            {
+              "recordId": "-4321312827874843485",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "第一份工作的平台，决定了第二份工作的起点；"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "你能否接受履历不被认可？",
+      "branches": [
+        {
+          "when": "相信能力比背书重要",
+          "lean": "高薪小公司",
+          "evidence": [
+            {
+              "recordId": "-4697769236779248759",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "当三者发生冲突时，优先保住那个离开后唯一能带走的东西，即能力结构、认知框架、解决问题的真本事。"
+            },
+            {
+              "recordId": "4836585803707084913",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "你在这份工作中获得的技能、判断力、协作习惯，能不能被你带到下一份工作里继续使用，才是衡量这份工作价值的核心标准。"
+            }
+          ]
+        },
+        {
+          "when": "担心小公司经历不被认可",
+          "lean": "低薪大厂",
+          "evidence": [
+            {
+              "recordId": "8717137609931460003",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "选小公司的真实成本是什么，是你拿到了更高的薪水，但承担了更大的不确定性，公司可能倒闭，老板可能跑路，这段经历可能不被认可"
+            },
+            {
+              "recordId": "4836585803707084913",
+              "kind": "answer",
+              "commentIndex": null,
+              "text": "但代价是：小公司死亡率高，业务动荡频繁，你的履历缺乏“正规军”的背书。"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
