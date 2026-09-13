@@ -10,7 +10,7 @@ import {buildReadingMap,ORDERS} from './engine.mjs';
 import {normalizeQuestion,planQuestion,askTopic,widenFocus} from './ask.mjs';
 import {extractComparison} from './pipeline/compare.mjs';
 import {createOAuth,parseCookies} from './oauth.mjs';
-import {fetchCollections,runCheckup} from './userdata.mjs';
+import {fetchCollections,runCheckup,verifyUserApis} from './userdata.mjs';
 
 const root=new URL('../',import.meta.url);
 const topics=await loadTopics();
@@ -118,6 +118,7 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
   const oauth=dependencies.oauth||createOAuth(env);
   const readCollections=dependencies.fetchCollections||fetchCollections;
   const checkup=dependencies.runCheckup||runCheckup;
+  const verify=dependencies.verifyUserApis||verifyUserApis;
   const checkups=new Map(); // 用户标识 → {expires, pending}：同一用户 15 分钟内复用体检结果
   const log=line=>(dependencies.log||console.info)(line);
   let inFlight=0;
@@ -241,7 +242,7 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
         return send(res,200,{available:oauth.available,user:user?{name:user.name,headline:user.headline,avatar:user.avatar}:null});
       }
       // ── 登录用户的收藏：读取（从收藏里挑问题）与体检（评论区有没有人当场不同意） ──
-      if((req.method==='GET'&&url.pathname==='/api/my/collections')||(req.method==='POST'&&url.pathname==='/api/my/checkup')){
+      if((req.method==='GET'&&['/api/my/collections','/api/my/verify'].includes(url.pathname))||(req.method==='POST'&&url.pathname==='/api/my/checkup')){
         if(req.method==='POST'&&req.headers.origin&&new URL(req.headers.origin).host!==req.headers.host)return send(res,403,{error:'请求来源不匹配'});
         const cookies=parseCookies(req.headers.cookie);
         const user=oauth.available?oauth.current(cookies):null;
@@ -260,6 +261,13 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
             log(JSON.stringify({event:'collections_failed',reason:error.reason||'upstream'}));
             return error.reason==='auth'?authFailed():send(res,503,{error:'暂时读不到你的收藏，请稍后再试。'});
           }
+        }
+
+        if(url.pathname==='/api/my/verify'){
+          const results=await verify(env,token);
+          log(JSON.stringify({event:'verify',results:results.map(r=>`${r.id}:${r.status}`)}));
+          if(results.some(r=>r.code===20001))oauth.dropToken(cookies);
+          return send(res,200,{results});
         }
 
         if(!askReady(env))return send(res,503,{error:'收藏体检暂未开放。'});

@@ -52,6 +52,48 @@ export async function fetchCollections(env,token,{request=getJSON}={}){
   return body.Data.Items.map(normalizeCollection).filter(Boolean);
 }
 
+// 授权验收：按官方 zhihu-hackathon skill 的要求，五项用户接口各读一条（创作、关注、收藏夹、收藏夹内容、近期收藏），
+// 成功 / 空数据 / 失败如实记录。只返回标题级信息。收藏夹内容依赖第一个收藏夹的 UrlToken，没有收藏夹算空数据。
+const USER_API='https://developer.zhihu.com/api/v1/user/';
+const VERIFY_CHECKS=[
+  ['contents','我的创作',{ContentType:'all',Limit:'1',Offset:'0'}],
+  ['followees','我的关注',{Limit:'1',Offset:'0'}],
+  ['favlists','收藏夹',{Limit:'1'}],
+  ['favlist_contents','收藏夹内容',null],
+  ['collections','近期收藏',{Limit:'1'}]
+];
+function summarize(id,item){
+  if(id==='followees')return {title:String(item.Fullname||'').slice(0,40)};
+  if(id==='favlists')return {title:String(item.Title||'').slice(0,40),public:!!item.IsPublic};
+  return {title:String(item.Title||'').slice(0,60),type:item.ContentType||''};
+}
+export async function verifyUserApis(env,token,{request=getJSON}={}){
+  const results=[];
+  let favlist=null;
+  for(const [id,name,params] of VERIFY_CHECKS){
+    let query=params;
+    if(id==='favlist_contents'){
+      if(!favlist){results.push({id,name,status:'empty',message:'账号没有可用于测试的收藏夹'});continue;}
+      query={FavlistUrlToken:String(favlist),Limit:'1',Offset:'0'};
+    }
+    const url=new URL(USER_API+id);
+    url.search=new URLSearchParams(query).toString();
+    try{
+      const body=await request(url,{headers:{
+        Authorization:`Bearer ${env.ZHIHU_ACCESS_SECRET}`,'X-OAuth-Token':token,
+        'X-Request-Timestamp':String(Math.floor(Date.now()/1000)),'Content-Type':'application/json'
+      }});
+      if(body?.Code!==0)throw Object.assign(new Error(body?.Message||'接口失败'),{code:body?.Code??null});
+      const item=Array.isArray(body.Data?.Items)?body.Data.Items[0]||null:null;
+      if(id==='favlists'&&item?.UrlToken)favlist=item.UrlToken;
+      results.push({id,name,status:item?'success':'empty',sample:item?summarize(id,item):null,total:body.Data?.Paging?.Totals??null});
+    }catch(error){
+      results.push({id,name,status:'error',code:error.code??error.status??null,message:String(error.message).slice(0,120)});
+    }
+  }
+  return results;
+}
+
 // 收藏里的回答用它自己的一句话去搜：实测（60 条回答）命中约 65%，用问题标题只有约 10%。
 export function sentenceOf(summary){
   return (String(summary).match(/[^。！？\n]{12,}/)||[''])[0].trim().slice(0,38);

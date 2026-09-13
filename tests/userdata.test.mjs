@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {fetchCollections,normalizeCollection,sentenceOf,runCheckup} from '../src/userdata.mjs';
+import {fetchCollections,normalizeCollection,sentenceOf,runCheckup,verifyUserApis} from '../src/userdata.mjs';
 import {createServer} from '../src/server.mjs';
 
 const env={ZHIHU_ACCESS_SECRET:'secret-test',AI_BASE_URL:'https://example.invalid',AI_API_KEY:'k',AI_MODEL:'m',ZHIJING_ENABLE_PILOT:'1'};
@@ -47,6 +47,27 @@ test('体检：用回答里的一句话搜索，对上的才分析；有人不�
   assert.deepEqual([out.checked,out.matched,out.withComments,out.pushback],[3,2,2,1]);
   assert.deepEqual(out.items.map(i=>i.status),['pushback','quiet','unmatched']);
   assert.equal(out.items[0].objections[0].commentText,'我是 985 本科，情况不一样');
+});
+
+test('授权验收：五项接口各读一条；收藏夹内容用第一个收藏夹的 UrlToken；成功、空数据、失败如实记录',async()=>{
+  const seen=[];
+  const request=async url=>{
+    const u=new URL(url);seen.push(u.pathname.split('/').pop()+'?'+u.searchParams.toString());
+    const name=u.pathname.split('/').pop();
+    if(name==='contents')return {Code:0,Data:{Items:[{ContentType:'pin',Title:'高赞 ≠ 适合你'}],Paging:{Totals:3}}};
+    if(name==='followees')return {Code:0,Data:{Items:[]}};
+    if(name==='favlists')return {Code:0,Data:{Items:[{UrlToken:794069227,Title:'我的收藏',IsPublic:false}]}};
+    if(name==='favlist_contents')return {Code:0,Data:{Items:[{ContentType:'article',Title:'如何自制一个超迷你的语音助手'}]}};
+    return {Code:20001,Message:'auth failed'};
+  };
+  const results=await verifyUserApis(env,'user-tok',{request});
+  assert.deepEqual(results.map(r=>[r.id,r.status]),[['contents','success'],['followees','empty'],['favlists','success'],['favlist_contents','success'],['collections','error']]);
+  assert.ok(seen.some(s=>s.startsWith('favlist_contents?FavlistUrlToken=794069227')));
+  assert.equal(results[0].sample.title,'高赞 ≠ 适合你');
+  assert.equal(results[4].code,20001);
+
+  const none=await verifyUserApis(env,'t',{request:async url=>new URL(url).pathname.endsWith('favlists')?{Code:0,Data:{Items:[]}}:{Code:0,Data:{Items:[]}}});
+  assert.equal(none.find(r=>r.id==='favlist_contents').status,'empty');
 });
 
 async function serve(server,fn){
