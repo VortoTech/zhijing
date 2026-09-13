@@ -66,6 +66,14 @@ async function loadComparison(topicId){
   }catch{return null;}
 }
 
+// 首页示例问题的离线结果（scripts/save-example.mjs 生成）：点开即出，不消耗实时次数，未配置实时也能看。
+async function loadSavedExample(question){
+  try{
+    const saved=JSON.parse(await readFile(new URL(`data/examples/${askTopic(question,{queries:[]}).id}.json`,root),'utf8'));
+    return saved.question===question?saved:null;
+  }catch{return null;}
+}
+
 function validateRequest(input){
   if(!input||typeof input!=='object'||Array.isArray(input))throw new Error('请求格式不正确');
   if(typeof input.topicId!=='string')throw new Error('缺少话题');
@@ -166,6 +174,13 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
     let input;
     try{input=validateAsk(await readBody(req));}
     catch(error){return send(res,400,{error:error.message||'输入无效'});}
+    const saved=input.refresh?null:await loadSavedExample(input.question);
+    if(saved){
+      log(JSON.stringify({event:'ask_saved',records:saved.records.length}));
+      return send(res,200,{...buildReadingMap(saved.records,{topic:saved.topic,order:'attention',meta:{
+        ...saved.meta,saved:true,savedAt:saved.savedAt,question:input.question,sessionKey:`ask:${input.question}`
+      }}),comparison:saved.comparison});
+    }
     if(!askReady(env))return send(res,503,{error:'实时检索暂未开放，可以先看看示例。'});
     if(inFlight>=4)return send(res,429,{error:'当前请求较多，请稍后再试。'});
     inFlight++;

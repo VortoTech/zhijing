@@ -1,13 +1,14 @@
 import {buildReadingMap,pushbackFor} from '/engine.js';
 import {createReadingSession} from '/session.js';
 
-// 示例问题：第一个有提前整理好的样本，点开立即出结果；其余走实时检索。
+// 示例问题都能秒开：第一个是人工标注的样本，其余是保存下来的实时结果（data/examples/）。
 const EXAMPLES=[
   {question:'第一份工作选高薪还是成长',sample:'first-job'},
-  {question:'考研还是直接工作'},
-  {question:'毕业去大城市还是回老家'},
-  {question:'要不要转行做程序员'}
+  {question:'考研还是直接工作',saved:true},
+  {question:'毕业去大城市还是回老家',saved:true},
+  {question:'要不要转行做程序员',saved:true}
 ];
+const isSaved=question=>EXAMPLES.some(e=>e.saved&&e.question===question);
 // 默认只列出前几个分叉条件，其余按需展开。
 const MAX_FORKS=3;
 
@@ -48,7 +49,7 @@ function clearResults(){
 function setBusy(busy){
   $('ask-btn').disabled=busy;
   $('results').setAttribute('aria-busy',String(busy));
-  for(const b of $('examples').querySelectorAll('button'))b.disabled=busy||(!b.dataset.sample&&!state.config?.askReady);
+  for(const b of $('examples').querySelectorAll('button'))b.disabled=busy||(!b.dataset.sample&&!b.dataset.saved&&!state.config?.askReady);
 }
 function stopTicker(){clearInterval(ticker);ticker=null;}
 function showProgress(live){
@@ -285,6 +286,8 @@ function render(){
   if(!dataset)return;
   const data=buildReadingMap(dataset.records,{topic:dataset.topic,meta:dataset.meta,order:'attention'});
   const sample=data.meta.mode==='snapshot';
+  const saved=!!data.meta.saved;
+  const savedDay=saved?new Date(data.meta.savedAt).toLocaleDateString('zh-CN',{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric'}):'';
   const focused=data.records.filter(r=>r.focused),flagged=focused.filter(r=>r.objections.length);
   if(openCards===null)openCards=new Set();
   const incomplete=data.records.filter(r=>['failed','partial'].includes(r.analysis?.status));
@@ -297,10 +300,10 @@ function render(){
   const head=[
     el('h2',{class:'result-title',text:data.meta.question||data.topic.title}),
     el('p',{class:'result-meta'},[
-      (sample?'示例数据 · ':'')+`读了 ${focused.length} 条相关回答 · AI 归纳，原话一字未改`
+      (sample?'示例数据 · ':saved?`示例（${savedDay} 实时检索保存）· `:'')+`读了 ${focused.length} 条相关回答 · AI 归纳，原话一字未改`
         +(pushed?` · ${pushed} 句原话在评论区被读者当场反驳或补充`:''),
       button('怎么来的？',()=>{$('data-details').open=true;$('data-details').scrollIntoView({behavior:'smooth',block:'start'});},{class:'link-btn'}),
-      sample&&state.config?.askReady?button('用实时检索重新找',()=>load({kind:'ask',question:data.topic.title}),{class:'link-btn'}):null
+      (sample||saved)&&state.config?.askReady?button('用实时检索重新找',()=>load({kind:'ask',question:saved?data.meta.question:data.topic.title},saved),{class:'link-btn'}):null
     ])
   ];
   if(incomplete.length||data.meta.failedQueries){
@@ -346,7 +349,7 @@ function render(){
 }
 
 $('examples').replaceChildren(...EXAMPLES.map(e=>button(e.question,()=>load(viewFor(e.question)),{
-  class:'chip-btn','data-question':e.question,'data-sample':e.sample||false,'aria-pressed':'false'
+  class:'chip-btn','data-question':e.question,'data-sample':e.sample||false,'data-saved':e.saved||false,'aria-pressed':'false'
 })));
 $('ask-form').addEventListener('submit',event=>{
   event.preventDefault();
@@ -354,7 +357,7 @@ $('ask-form').addEventListener('submit',event=>{
   try{question=normalizeQuestion($('q').value);}
   catch(error){$('ask-note').textContent=error.message;$('q').focus();return;}
   const view=viewFor(question);
-  if(view.kind==='ask'&&!state.config?.askReady){$('ask-note').textContent='实时检索暂未开放，可以先看看示例。';return;}
+  if(view.kind==='ask'&&!state.config?.askReady&&!isSaved(question)){$('ask-note').textContent='实时检索暂未开放，可以先看看示例。';return;}
   load(view);
 });
 
@@ -371,7 +374,7 @@ async function boot(){
   let initial=sampleView();
   const q=new URLSearchParams(location.search).get('q');
   if(q){
-    try{const view=viewFor(normalizeQuestion(q));if(view.kind==='sample'||state.config.askReady)initial=view;}catch{}
+    try{const view=viewFor(normalizeQuestion(q));if(view.kind==='sample'||state.config.askReady||isSaved(view.question))initial=view;}catch{}
   }
   load(initial);
 }
