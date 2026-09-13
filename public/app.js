@@ -3,10 +3,10 @@ import {createReadingSession} from '/session.js';
 
 // 示例问题都能秒开：第一个是人工标注的样本，其余是保存下来的实时结果（data/examples/）。
 const EXAMPLES=[
-  {question:'第一份工作选高薪还是成长',sample:'first-job'},
+  {question:'第一份工作选高薪小公司还是低薪大厂',sample:'first-job'},
   {question:'考研还是直接工作',saved:true},
   {question:'毕业去大城市还是回老家',saved:true},
-  {question:'要不要转行做程序员',saved:true}
+  {question:'研究生毕业去国企还是私企',saved:true}
 ];
 const isSaved=question=>EXAMPLES.some(e=>e.saved&&e.question===question);
 // 默认只列出前几个分叉条件，其余按需展开。
