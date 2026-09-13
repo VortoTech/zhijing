@@ -18,6 +18,8 @@
 
 ## 发布新版本
 
+先在本机确认 `npm run check && npm test` 退出码为 0 再打包。不要用 `npm test | grep …` 的结果判断：管道的退出码是 grep 的，测试失败也会被当成成功（9/13 因此带着 2 个失败的测试发布过一次）。
+
 ```sh
 # 本机
 git archive --format=tar.gz -o /tmp/zhijing-$(git rev-parse --short HEAD).tar.gz HEAD

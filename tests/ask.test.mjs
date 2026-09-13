@@ -24,14 +24,14 @@ test('问题规整与长度限制',()=>{
 });
 
 test('规划：原问题排第一，去重，丢弃非法和过长项',async()=>{
-  const plan=await planQuestion('考研还是直接工作',env,{request:reply({
+  const plan=await planQuestion('读博还是直接工作',env,{request:reply({
     kind:'opinion',
     queries:['考研 工作 怎么选','考研 工作 怎么选','',42,'x'.repeat(80),'二战 考研 还是 工作'],
     focusTerms:['考研','工作','这是一个特别长的关键词'],
     excerptTerms:['读研','就业']
   })});
   assert.equal(plan.kind,'opinion');
-  assert.deepEqual(plan.queries,['考研还是直接工作','考研 工作 怎么选','二战 考研 还是 工作']);
+  assert.deepEqual(plan.queries,['读博还是直接工作','考研 工作 怎么选','二战 考研 还是 工作']);
   assert.deepEqual(plan.focusTerms,['考研','工作']);
   assert.equal(plan.planned,true);
 });
@@ -71,7 +71,7 @@ test('自由提问：规划→检索→分类，带会话键，缓存复用，�
     assert.equal(session.accept(session.begin('ask:第一份工作选高薪还是成长'),data),true);
     assert.equal((await ask(base,{question:'第一份工作选高薪还是成长'})).status,200);
     assert.deepEqual([plans,fetches,classes],[1,1,1]);
-    const over=await ask(base,{question:'考研还是直接工作'});
+    const over=await ask(base,{question:'读博还是直接工作'});
     assert.equal(over.status,429);
     assert.match((await over.json()).error,/次数已用完/);
   });
@@ -94,7 +94,7 @@ test('自由提问：查资料类 422 不检索；过短 400；跨站 403；未�
     assert.equal((await ask(base,{question:'考研还是工作'},{origin:'https://evil.example'})).status,403);
   });
   await serve(createServer({...env,ZHIJING_ENABLE_PILOT:'0'},deps),async base=>{
-    assert.equal((await ask(base,{question:'考研还是直接工作'})).status,503);
+    assert.equal((await ask(base,{question:'读博还是直接工作'})).status,503);
     const config=await (await fetch(base+'/api/config')).json();
     assert.equal(config.askReady,false);
   });
