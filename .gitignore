@@ -7,3 +7,4 @@ node_modules/
 data/cache/
 output/
 .claude/skills/zhihu-hackathon/
+data/raw/

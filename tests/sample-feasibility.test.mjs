@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
+import {readFile,access} from 'node:fs/promises';
 import {dedupe} from '../src/pipeline/extract.mjs';
 import {looksLikeEmptyPraise} from '../src/pipeline/verify.mjs';
 import {buildReadingMap, FLAG_RATIO_THRESHOLD} from '../src/engine.mjs';
@@ -24,8 +24,12 @@ async function sample(path) {
   };
 }
 
-const job = await sample('data/raw/r-job.json');
-const luohu = await sample('data/raw/r-luohu.json');
+// 早期探针的原始数据（data/raw/）含知乎回答摘要与评论原文，不放进公开仓库；本地有数据时才跑依赖它的测试。
+const RAW = ['data/raw/r-job.json', 'data/raw/r-luohu.json'];
+const hasRaw = (await Promise.all(RAW.map(p => access(new URL(p, root)).then(() => true, () => false)))).every(Boolean);
+const job = hasRaw ? await sample(RAW[0]) : null;
+const luohu = hasRaw ? await sample(RAW[1]) : null;
+const rawTest = (name, fn) => test(name, {skip: hasRaw ? false : '公开仓库不含 data/raw 原始探针数据'}, fn);
 const topics = await loadTopics();
 
 test('引擎必须能直接吃下提取层记录（没有 objections / claim）', () => {
@@ -43,34 +47,34 @@ test('缺 comments 字段也不崩', () => {
   assert.doesNotThrow(() => buildReadingMap(bare, {topic: findTopic(topics, 'first-job')}));
 });
 
-test('观点型样本：评论覆盖率过半', () => {
+rawTest('观点型样本：评论覆盖率过半', () => {
   assert.ok(job.coverage > 0.5, `实际 ${job.coverage}`);
 });
 
-test('信息型样本：评论覆盖率显著更低', () => {
+rawTest('信息型样本：评论覆盖率显著更低', () => {
   assert.ok(luohu.coverage < 0.2, `实际 ${luohu.coverage}`);
   assert.ok(job.coverage - luohu.coverage > 0.3, '两类问题的覆盖率应拉开明显差距');
 });
 
-test('两类的评论质量接近——差距来自数量而不是质量', () => {
+rawTest('两类的评论质量接近——差距来自数量而不是质量', () => {
   // 这条是边界论证的关键：信息型不是评论更水，是根本没有评论。
   assert.ok(Math.abs(job.commentQuality - luohu.commentQuality) < 0.15,
     `观点型 ${job.commentQuality} vs 信息型 ${luohu.commentQuality}`);
 });
 
-test('信息型样本的标记密度上界低于门槛——422 拦截有数据依据', () => {
+rawTest('信息型样本的标记密度上界低于门槛——422 拦截有数据依据', () => {
   // 即使模型把每条候选都判对，也到不了门槛。所以拒绝不是保守，是算术。
   assert.ok(luohu.upperBound < FLAG_RATIO_THRESHOLD,
     `上界 ${luohu.upperBound} 应低于门槛 ${FLAG_RATIO_THRESHOLD}`);
 });
 
-test('观点型样本的上界高于门槛，因此上界只能用于排除、不能用于放行', () => {
+rawTest('观点型样本的上界高于门槛，因此上界只能用于排除、不能用于放行', () => {
   assert.ok(job.upperBound > FLAG_RATIO_THRESHOLD);
   // 但真实密度远低于上界（人工标注实测 8.3%），说明机械过滤过于宽松。
   assert.ok(job.upperBound > 0.4, '上界应当明显宽松');
 });
 
-test('话题包声明的覆盖率与实测一致', () => {
+rawTest('话题包声明的覆盖率与实测一致', () => {
   for (const [id, measured] of [['first-job', job.coverage], ['luohu-tax', luohu.coverage]]) {
     const declared = findTopic(topics, id).verified.commentCoverage;
     assert.ok(declared != null, `${id} 应声明覆盖率`);

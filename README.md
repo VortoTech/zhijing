@@ -93,6 +93,8 @@ npm run check             # 语法检查
 src/            服务端：server、ask、oauth、userdata、engine、pipeline/（检索、提取、归类、校验、对比）
 public/         前端页面
 data/           离线示例：snapshot/compare-first-job（人工标注）、examples/（保存的实时结果）
+                早期探针原始数据 data/raw/ 含知乎回答摘要与评论原文，不放进公开仓库；
+                scripts/build-snapshot、analyze-sample 需要它，依赖它的测试在缺少时自动跳过
 topics/         预设话题包
 scripts/        生成离线示例、保存示例、评估等脚本
 tests/          自动化测试
