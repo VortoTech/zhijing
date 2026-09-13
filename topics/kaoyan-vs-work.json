@@ -1,0 +1,33 @@
+{
+  "id": "kaoyan-vs-work",
+  "title": "考研还是直接工作",
+  "kind": "opinion",
+  "liveStatus": "blocked",
+  "kindNote": "第二个话题包，用于验证「换话题零代码」——新增话题只需复制本文件改 queries 与 conditions，引擎与前端不动。",
+  "verified": {
+    "commentCoverage": null,
+    "source": "尚未跑探针",
+    "note": "⚠️ 未验证。启用前必须先用探针统计精选评论覆盖与三态标签分布；覆盖不足则不要上线这个话题。"
+  },
+  "queries": [
+    "考研 还是 直接工作 怎么选",
+    "二战考研 值不值得",
+    "本科学历 找工作 够用吗",
+    "读研 三年 和 工作 三年 哪个划算",
+    "考研 失败 应届生 怎么办",
+    "研究生 毕业 就业 比 本科生 好多少",
+    "双非 考研 还是 工作",
+    "为了 逃避 就业 去 考研"
+  ],
+  "situationFields": [
+    { "id": "stage", "label": "你的阶段", "options": ["大四在读", "已毕业 1 年"] },
+    { "id": "school", "label": "本科层次", "options": ["985/211", "双非"] },
+    { "id": "major", "label": "专业类型", "options": ["理工科", "文科/商科"] },
+    { "id": "target", "label": "考研目的", "options": ["换赛道", "提升学历"] }
+  ],
+  "conditions": [
+    { "id": "cash", "label": "需要考虑经济压力", "short": "经济约束" },
+    { "id": "growth", "label": "在意三年后的天花板", "short": "长期回报" },
+    { "id": "mobility", "label": "想换专业或行业", "short": "转赛道" }
+  ]
+}

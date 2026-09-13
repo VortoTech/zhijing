@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>知镜 · 看见回答之外的声音</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<main class="wrap">
+  <header class="masthead">
+    <h1>知镜<span class="dot">.</span></h1>
+    <p class="tagline">看一条建议，也看看读者的反驳和补充条件。</p>
+    <p class="redline">异议逐字引用，并附原文。<strong>有人提出异议，不代表异议成立；没发现异议，也不代表回答正确。</strong></p>
+  </header>
+  <section class="controls" aria-label="阅读设置">
+    <div class="row">
+      <label for="topic">阅读话题</label><select id="topic"></select>
+      <div class="seg" id="mode" role="group" aria-label="数据来源">
+        <button type="button" data-mode="snapshot" aria-pressed="true">离线样本</button>
+        <button type="button" data-mode="live" aria-pressed="false">实时检索</button>
+      </div>
+      <span class="note" id="live-note"></span>
+    </div>
+    <details id="reading-settings">
+      <summary>阅读顺序与个人条件（可选）</summary>
+      <div class="row settings-row"><span>阅读顺序</span><div class="seg" id="order" role="group" aria-label="排序方式"></div></div>
+      <div class="row settings-row" id="situation-fields"></div>
+      <div class="row settings-row"><button type="button" class="btn ghost" id="clear-situation">清空条件</button><p class="note">仅查找涉及所选条件的评论原话，不判断建议是否适合你。</p></div>
+      <p id="coverage-note" class="note" aria-live="polite"></p>
+    </details>
+  </section>
+  <div id="error-slot" role="alert"></div>
+  <div id="status" role="status" aria-live="polite"></div>
+  <section id="results" aria-label="阅读结果" aria-busy="false">
+    <div id="list-bar" class="list-bar"></div>
+    <div id="list" class="list"></div>
+  </section>
+  <details id="data-details" class="data-details" hidden>
+    <summary>数据来源、覆盖范围与分析说明</summary>
+    <div id="source-note"></div><div id="diag-slot"></div>
+  </details>
+</main>
+<script type="module" src="/app.js"></script>
+</body>
+</html>
