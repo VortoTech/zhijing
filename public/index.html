@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>知镜 · 两边的真人原话，放在一起对比</title>
-<meta name="description" content="输入你正在纠结的选择，知镜读完知乎上相关的回答和评论，把两边各自的理由、决定你选哪边的条件并排摆出来，每条都附真人原话。">
+<meta name="description" content="输入你正在纠结的选择，知镜把知乎上两边的真人原话并排摆出来，看看你属于哪种情况。">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -12,7 +12,7 @@
   <header class="hero">
     <p class="brand">知镜<span class="dot">.</span></p>
     <h1>高赞回答，不一定适用于你。</h1>
-    <p class="lede">输入你正在纠结的选择。知镜读完知乎上相关的回答和评论，把两边各自的理由、决定你该选哪边的条件并排摆出来，每条都附真人原话，一字不改，可以逐条核对。它不替你做决定。</p>
+    <p class="lede">输入你在纠结的选择，把知乎上两边的真人原话并排摆出来，看看你属于哪种情况。</p>
     <form id="ask-form" class="ask" role="search" novalidate>
       <label for="q" class="sr-only">你在纠结什么</label>
       <input id="q" name="q" type="search" maxlength="80" autocomplete="off" enterkeyhint="search" placeholder="你在纠结什么？比如：考研还是直接工作">
@@ -20,7 +20,7 @@
     </form>
     <p id="ask-note" class="note" aria-live="polite"></p>
     <div class="examples">
-      <span class="note">不知道问什么？点一个试试：</span>
+      <span class="note">试试：</span>
       <div id="examples" class="chips" role="group" aria-label="示例问题"></div>
     </div>
   </header>
@@ -29,13 +29,15 @@
   <section id="results" aria-label="结果" aria-busy="false">
     <div id="result-head"></div>
     <div id="compare"></div>
-    <div id="sources-head"></div>
-    <div id="list-bar" class="list-bar"></div>
-    <div id="list" class="list"></div>
-    <p id="result-foot" class="note foot" hidden>标题和分支说明由 AI 归纳，只帮你把两边摆清楚，不替你做决定。有人提出异议，不代表异议成立；没发现异议，也不代表回答适用于你。</p>
+    <details id="sources" class="sources" hidden>
+      <summary id="sources-summary"></summary>
+      <div id="sources-note"></div>
+      <div id="list-bar" class="list-bar"></div>
+      <div id="list" class="list"></div>
+    </details>
   </section>
   <details id="data-details" class="data-details" hidden>
-    <summary>数据来源与分析说明</summary>
+    <summary>这些内容是怎么来的</summary>
     <div id="source-note"></div><div id="diag-slot"></div>
   </details>
 </main>

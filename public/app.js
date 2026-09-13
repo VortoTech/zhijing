@@ -6,13 +6,13 @@ const EXAMPLES=[
   {question:'第一份工作选高薪还是成长',sample:'first-job'},
   {question:'考研还是直接工作'},
   {question:'毕业去大城市还是回老家'},
-  {question:'要不要转行做程序员'},
-  {question:'选专业看兴趣还是看就业'},
-  {question:'要不要为了对象换城市'}
+  {question:'要不要转行做程序员'}
 ];
+// 默认只列出前几个分叉条件，其余按需展开。
+const MAX_FORKS=3;
 
 const session=createReadingSession();
-const state={config:null,view:null,filter:'flagged'};
+const state={config:null,view:null,filter:'flagged',showAllForks:false};
 let openCards=null,ticker=null;
 const $=id=>document.getElementById(id);
 function el(tag,props={},children=[]){
@@ -42,10 +42,8 @@ function viewFor(question){
 }
 
 function clearResults(){
-  for(const id of ['result-head','compare','sources-head','list','list-bar','diag-slot','source-note'])clear($(id));
-  $('result-foot').hidden=true;
-  $('data-details').hidden=true;
-  $('data-details').open=false;
+  for(const id of ['result-head','compare','sources-summary','sources-note','list','list-bar','diag-slot','source-note'])clear($(id));
+  for(const id of ['sources','data-details']){$(id).hidden=true;$(id).open=false;}
 }
 function setBusy(busy){
   $('ask-btn').disabled=busy;
@@ -59,7 +57,7 @@ function showProgress(live){
   const elapsed=el('span',{class:'elapsed'});
   $('status').replaceChildren(el('div',{class:'progress'},[
     el('span',{class:'spinner','aria-hidden':'true'}),
-    el('span',{text:live?'正在读知乎上相关的回答和评论，把两边的原话整理到一起，通常要 20–40 秒。':'正在打开示例…'}),
+    el('span',{text:live?'正在读知乎上相关的回答和评论，通常要 20–40 秒。':'正在打开示例…'}),
     elapsed,
     button('取消',cancel,{class:'btn ghost small'})
   ]));
@@ -87,7 +85,7 @@ function markExamples(){
 }
 
 async function load(view,refresh=false){
-  state.view=view;state.filter='flagged';
+  state.view=view;state.filter='flagged';state.showAllForks=false;
   $('q').value=view.question;$('ask-note').textContent='';
   syncUrl(view);markExamples();
   const live=view.kind==='ask';
@@ -122,29 +120,19 @@ function sourceLink(record,label='打开知乎原文 ↗'){
   }catch{return null;}
 }
 
-// ── 对比图：原话由程序按编号从原文取出，标题与分支说明是模型归纳 ──
+// ── 对比图：默认只给结论，原话点开再看 ──
 function evidenceFigure(e,byId){
   const record=byId.get(e.recordId);
   return el('figure',{class:'evidence'},[
     el('blockquote',{text:e.text}),
-    el('figcaption',{},[
-      (e.kind==='comment'?'评论':'回答')+(record?' · '+(record.voteUp??'—')+' 赞 · '+cleanTitle(record.title).slice(0,30)+' ':''),
+    el('figcaption',{title:record?cleanTitle(record.title):false},[
+      (e.kind==='comment'?'评论':'回答')+(record?' · '+(record.voteUp??'—')+' 赞 ':''),
       record?sourceLink(record,'原文 ↗'):null
     ])
   ]);
 }
-function quotes(list,byId){
-  return [
-    evidenceFigure(list[0],byId),
-    list.length>1?el('details',{class:'more-evidence'},[
-      el('summary',{text:'还有 '+(list.length-1)+' 段原话'}),
-      ...list.slice(1).map(e=>evidenceFigure(e,byId))
-    ]):null
-  ];
-}
 function comparisonSections(block,records,sample){
   const byId=new Map(records.map(r=>[r.id,r]));
-  const note=()=>el('p',{class:'note',text:'标题和分支说明由 AI 从真人回答和评论里归纳'+(block?.offline?'（示例为离线整理）':'')+'；引号里是原话，由程序按编号从原文取出，一字未改，可以点来源核对。'});
   const hasSides=block?.sides?.some(s=>s.reasons.length);
   if(block?.status!=='complete'||(!hasSides&&!block.forks.length)){
     const message=block?.status==='failed'?'这次没能整理出对比（模型请求失败）。'
@@ -158,26 +146,36 @@ function comparisonSections(block,records,sample){
   const side=option=>option===B?' b':'';
   const sections=[];
   if(hasSides)sections.push(el('section',{class:'compare-block','aria-labelledby':'sides-title'},[
-    el('h3',{id:'sides-title',class:'section-title',text:'两边各自的理由'}),
-    note(),
+    el('h3',{id:'sides-title',class:'section-title',text:'两边的理由'}),
     el('div',{class:'sides'},block.sides.map(s=>el('div',{class:'side'+side(s.option)},[
-      el('h4',{class:'side-title'},['选',el('span',{class:'opt'+side(s.option),text:s.option}),'的人说']),
-      ...(s.reasons.length
-        ?s.reasons.map(r=>el('div',{class:'reason'},[el('p',{class:'reason-label',text:r.label}),...quotes(r.evidence,byId)]))
-        :[el('p',{class:'note',text:'这次没找到这一边的理由。'})])
+      el('h4',{class:'side-title'},['选',el('span',{class:'opt'+side(s.option),text:s.option})]),
+      s.reasons.length
+        ?el('ul',{class:'reasons'},s.reasons.map(r=>el('li',{},[el('details',{class:'reason'},[
+          el('summary',{text:r.label}),
+          ...r.evidence.map(e=>evidenceFigure(e,byId))
+        ])])))
+        :el('p',{class:'note',text:'没找到这一边的理由。'})
     ])))
   ]));
-  if(block.forks.length)sections.push(el('section',{class:'compare-block','aria-labelledby':'forks-title'},[
-    el('h3',{id:'forks-title',class:'section-title',text:'决定你选哪边'}),
-    hasSides?el('p',{class:'note',text:'看看你属于哪种情况。每条分支都有人用原话说过。'}):note(),
-    el('ol',{class:'forks'},block.forks.map(f=>el('li',{class:'fork'},[
-      el('h4',{class:'fork-label',text:f.label}),
-      el('div',{class:'branches'},f.branches.map(b=>el('div',{class:'branch'+side(b.lean)},[
-        el('p',{class:'branch-when'},[b.when,el('span',{class:'arrow',text:'→'}),el('span',{class:'opt'+side(b.lean),text:b.lean})]),
-        ...quotes(b.evidence,byId)
-      ])))
-    ])))
-  ]));
+  if(block.forks.length){
+    const shown=state.showAllForks?block.forks:block.forks.slice(0,MAX_FORKS);
+    const rest=block.forks.length-shown.length;
+    sections.push(el('section',{class:'compare-block','aria-labelledby':'forks-title'},[
+      el('h3',{id:'forks-title',class:'section-title',text:'决定你选哪边'}),
+      el('p',{class:'note',text:'看看你属于哪种情况。'}),
+      // 宽屏默认展开第一个条件示范「可以核对原话」；手机上全部收起，免得首屏被原话占满。
+      el('ol',{class:'forks'},shown.map((f,i)=>el('li',{},[el('details',{class:'fork',open:i===0&&matchMedia('(min-width: 641px)').matches},[
+        el('summary',{},[
+          el('span',{class:'fork-label',text:f.label}),
+          el('span',{class:'pills'},f.branches.map(b=>el('span',{class:'pill'+side(b.lean)},[
+            b.when,el('span',{class:'arrow',text:'→'}),el('strong',{text:b.lean})
+          ])))
+        ]),
+        el('div',{class:'branches'},f.branches.map(b=>el('div',{class:'branch'+side(b.lean)},b.evidence.map(e=>evidenceFigure(e,byId)))))
+      ])]))),
+      rest>0?button('再看 '+rest+' 个条件',()=>{state.showAllForks=true;render();},{class:'btn ghost small more-forks'}):null
+    ]));
+  }
   return sections;
 }
 
@@ -240,61 +238,58 @@ function render(){
   const data=buildReadingMap(dataset.records,{topic:dataset.topic,meta:dataset.meta,order:'attention'});
   const sample=data.meta.mode==='snapshot';
   const focused=data.records.filter(r=>r.focused),flagged=focused.filter(r=>r.objections.length);
-  const comparison=dataset.comparison;
   if(openCards===null)openCards=new Set();
   const incomplete=data.records.filter(r=>['failed','partial'].includes(r.analysis?.status));
   if(state.filter==='incomplete'&&!incomplete.length)state.filter='flagged';
+  if(state.filter==='flagged'&&!flagged.length)state.filter='focused';
   const visible=state.filter==='flagged'?flagged:state.filter==='focused'?focused:state.filter==='incomplete'?incomplete:data.records;
 
-  const compared=comparison?.status==='complete'&&comparison.options.length===2;
+  // 结果头只留问题和一行说明，AI 与数据口径收进页面底部。
   const head=[
-    el('p',{class:'eyebrow',text:sample?'示例 · 提前整理好的样本（2026-09-07 抓取）':'实时结果 · 由模型整理，可能有误判；每条都附原话，可以自己核对'}),
     el('h2',{class:'result-title',text:data.meta.question||data.topic.title}),
-    el('p',{class:'result-summary'},[
-      `读了 ${focused.length} 条相关回答和它们的精选评论`,
-      compared?['，把 ',el('span',{class:'opt',text:comparison.options[0]}),' 和 ',el('span',{class:'opt b',text:comparison.options[1]}),` 两边的原话摆在一起：${comparison.forks.length} 个决定你选哪边的条件。`]:'。'
+    el('p',{class:'result-meta'},[
+      (sample?'示例数据 · ':'')+`读了 ${focused.length} 条相关回答 · AI 归纳，原话一字未改`,
+      button('怎么来的？',()=>{$('data-details').open=true;$('data-details').scrollIntoView({behavior:'smooth',block:'start'});},{class:'link-btn'}),
+      sample&&state.config?.askReady?button('用实时检索重新找',()=>load({kind:'ask',question:data.topic.title}),{class:'link-btn'}):null
     ])
   ];
-  if(sample&&state.config?.askReady)head.push(el('p',{class:'note'},['这是示例数据。',button('用实时检索重新找一遍',()=>load({kind:'ask',question:data.topic.title}),{class:'link-btn'})]));
   if(incomplete.length||data.meta.failedQueries){
     head.push(el('p',{class:'note warn'},['这次结果不完整：'+incomplete.length+' 条分析没完成，'+(data.meta.failedQueries||0)+' 路检索失败。',button('重新分析',()=>load(state.view,true),{class:'link-btn'})]));
   }
   $('result-head').replaceChildren(...head);
-  $('compare').replaceChildren(...comparisonSections(comparison,data.records,sample));
+  $('compare').replaceChildren(...comparisonSections(dataset.comparison,data.records,sample));
 
-  $('sources-head').replaceChildren(
-    el('h3',{class:'section-title',text:'原始回答与评论区'}),
-    el('p',{class:'note',text:'上面引用的原话都来自这些回答。'+(flagged.length?`其中 ${flagged.length} 条被读者在评论区反驳或补充了前提（${sample?'人工标注':'模型挑出'}），默认先列出。`:'这次没在评论区找到读者的反驳。')}),
-    el('p',{class:'legend-line'},[
+  $('sources-summary').textContent=`原始回答与评论区 · ${focused.length} 条`+(flagged.length?`（${flagged.length} 条被读者反驳）`:'');
+  $('sources-note').replaceChildren(
+    el('p',{class:'note',text:'上面的原话都来自这些回答。'+(flagged.length?`被读者在评论区反驳或补充前提的排在前面（${sample?'人工标注':'模型挑出'}）。`:'')}),
+    flagged.length?el('p',{class:'legend-line'},[
       el('span',{class:'chip t-disputed',text:'有读者提出异议'}),el('span',{text:'有人反驳或指出回答的问题'}),
       el('span',{class:'chip t-conditional',text:'有前提条件'}),el('span',{text:'有人补充「这只适用于……」'})
-    ])
+    ]):null
   );
-  const filters=[['flagged','被读者反驳的 '+flagged.length],['focused','全部相关回答 '+focused.length],['all','全部检索结果 '+data.records.length]];
+  const filters=[];
+  if(flagged.length)filters.push(['flagged','被读者反驳的 '+flagged.length]);
+  filters.push(['focused','全部相关回答 '+focused.length],['all','全部检索结果 '+data.records.length]);
   if(incomplete.length)filters.push(['incomplete','待完成分析 '+incomplete.length]);
   $('list-bar').replaceChildren(el('div',{class:'seg',role:'group','aria-label':'显示范围'},filters.map(([id,label])=>button(label,()=>{
     state.filter=id;render();$('list-bar').querySelector('[aria-pressed="true"]')?.focus();
   },{'aria-pressed':String(state.filter===id)}))));
   $('list').replaceChildren(...visible.map(r=>card(r,openCards.has(r.id))));
-  if(!visible.length)$('list').append(el('div',{class:'empty'},[
-    el('p',{text:state.filter==='flagged'?'这次没有被读者反驳的回答。':'这里暂时没有内容。'}),
-    state.filter==='flagged'?button('看全部相关回答',()=>{state.filter='focused';render();},{class:'btn ghost'}):null
-  ]));
-  $('result-foot').hidden=false;
+  if(!visible.length)$('list').append(el('div',{class:'empty'},[el('p',{text:'这里暂时没有内容。'})]));
+  $('sources').hidden=false;
 
   const meta=data.meta;
   $('source-note').replaceChildren(
-    el('p',{text:meta.sourceNote||meta.description||'本次检索取得的有限样本。'}),
-    el('p',{text:(sample?'样本生成时间':'检索时间')+'：'+(meta.builtAt||meta.capturedAt||'未记录')}),
-    el('p',{text:'对比图由模型从赞数靠前的 24 条相关回答和它们的精选评论里整理：程序先把回答切句编号，模型只挑编号，页面按编号取原文。标题和分支说明是归纳，可能不全或不准。'}),
+    el('p',{text:'标题和分支说明由 AI 归纳，只帮你把两边摆清楚，不替你做决定。有人提出异议，不代表异议成立；没发现异议，也不代表回答适用于你。'}),
+    el('p',{text:'对比图由模型从赞数靠前的 24 条相关回答和它们的精选评论里整理：程序先把回答切句编号，模型只挑编号，页面按编号取原文，所以引号里的话一字未改。归纳本身可能不全或不准。'}),
     el('p',{text:sample?'评论区的反驳由人工标注，并校验引文来源。':'评论区的反驳由模型归类，并逐字校验引文来源。引文存在不代表归类一定正确。'}),
-    el('p',{text:'「相关回答」按标题关键词筛选，可能漏选；另有 '+(data.records.length-focused.length)+' 条在「全部检索结果」里。统计不代表知乎全量。每条最多取得 3 条精选评论。'})
+    el('p',{text:(meta.sourceNote||meta.description||'本次检索取得的有限样本。')+' '+(sample?'样本生成时间':'检索时间')+'：'+(meta.builtAt||meta.capturedAt||'未记录')+'。'}),
+    el('p',{text:'「相关回答」按标题关键词筛选，可能漏选；另有 '+(data.records.length-focused.length)+' 条在「全部检索结果」里。统计不代表知乎全量，每条最多取得 3 条精选评论。'})
   );
   if(meta.requestId)$('source-note').append(el('p',{text:'本次请求编号：'+meta.requestId}));
   const d=data.diagnostics;
   $('diag-slot').replaceChildren(
-    el('p',{text:'全部结果：'+d.total+' 条；取得评论：'+d.commentBearing+' 条；被反驳或补充前提：'+d.flagged+' 条；共 '+d.substantiveObjections+' 条读者原话。'}),
-    el('p',{text:'分析完成：'+d.analysisComplete+' 条；分析未完成：'+d.analysisIncomplete+' 条；无评论：'+d.noComments+' 条。'})
+    el('p',{text:'全部结果：'+d.total+' 条；取得评论：'+d.commentBearing+' 条；被反驳或补充前提：'+d.flagged+' 条；分析完成：'+d.analysisComplete+' 条；未完成：'+d.analysisIncomplete+' 条；无评论：'+d.noComments+' 条。'})
   );
   $('data-details').hidden=false;
 }

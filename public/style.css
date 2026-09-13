@@ -311,7 +311,37 @@ progress{width:100%;height:12px;accent-color:var(--accent);}
 .branch-when .arrow{color:var(--ink-3);margin:0 6px;font-weight:400;}
 .branch .evidence blockquote{background:rgba(255,255,255,.75);}
 .side.b .evidence blockquote,.branch.b .evidence blockquote{border-left-color:var(--opt-b);}
-#sources-head{margin-top:26px;}
+/* ── 精简：结论先行，原话点开再看 ───────────────── */
+.hero h1{font-size:26px;}
+.lede{margin-bottom:14px;}
+.examples{flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px;}
+.chip-btn{font-size:13.5px;padding:4px 12px;min-height:32px;}
+.result-title{margin:18px 0 4px;}
+.result-meta{display:flex;flex-wrap:wrap;align-items:center;gap:2px 4px;margin:0 0 12px;font-size:13px;color:var(--ink-3);}
+.reasons{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;}
+.reasons .reason{margin:0;}
+.reason > summary{font-size:14.5px;font-weight:600;padding:3px 0;}
+.reason[open] > summary{margin-bottom:6px;}
+.forks{gap:12px;}
+.fork > summary{list-style:none;display:flex;flex-direction:column;gap:8px;padding:2px 0;}
+.fork > summary::-webkit-details-marker{display:none;}
+.fork > summary::after{content:"看原话 ▾";font-size:12.5px;color:var(--accent);}
+.fork[open] > summary::after{content:"收起原话 ▴";}
+.fork .fork-label{font-size:15.5px;font-weight:650;line-height:1.5;}
+.pills{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+.pill{
+  border-radius:var(--radius-sm);padding:7px 10px;font-size:14px;line-height:1.5;
+  background:var(--opt-a-bg);border:1px solid rgba(47,107,94,.28);
+}
+.pill.b{background:var(--opt-b-bg);border-color:rgba(154,85,22,.28);}
+.pill strong{color:var(--opt-a);}
+.pill.b strong{color:var(--opt-b);}
+.pill .arrow{margin:0 5px;color:var(--ink-3);}
+.fork .branches{margin-top:8px;}
+.fork .branch{padding-top:10px;}
+.more-forks{margin:12px 0 6px;}
+.sources{margin-top:18px;border-top:1px solid var(--line);padding-top:12px;}
+.sources > summary{font-size:15px;font-weight:600;color:var(--ink-2);margin-bottom:10px;}
 
 .section-title{font-size:18px;margin:0 0 4px;}
 .conditions{
@@ -347,7 +377,8 @@ progress{width:100%;height:12px;accent-color:var(--accent);}
 
 @media (max-width:640px){
   .hero h1{font-size:24px;}
-  .sides,.branches{grid-template-columns:1fr;}
+  .sides,.branches,.pills{grid-template-columns:1fr;}
+  .hero h1{font-size:22px;}
   .ask{flex-direction:column;}
   .btn.big{width:100%;}
   .wrap{padding:16px 12px 48px;}
