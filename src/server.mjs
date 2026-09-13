@@ -9,6 +9,7 @@ import {classify} from './pipeline/classify.mjs';
 import {buildReadingMap,ORDERS} from './engine.mjs';
 import {normalizeQuestion,planQuestion,askTopic,widenFocus} from './ask.mjs';
 import {extractComparison} from './pipeline/compare.mjs';
+import {createOAuth,parseCookies} from './oauth.mjs';
 
 const root=new URL('../',import.meta.url);
 const topics=await loadTopics();
@@ -21,7 +22,7 @@ const FILES={
   '/style.css':['public/style.css','text/css; charset=utf-8']
 };
 
-const CSP="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
+const CSP="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://*.zhimg.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 const DEFAULT_LIVE_DAILY_LIMIT=200;
 const PARTIAL_TTL_MS=3*60*1000;
 const QUOTA_MESSAGE='今天的实时检索次数已用完，北京时间 0 点恢复。可以先看看示例。';
@@ -113,6 +114,7 @@ function incompleteCount(dataset){
 export function createServer(env=process.env,dependencies={fetchTopic,classify}){
   const plan=dependencies.planQuestion||planQuestion;
   const extract=dependencies.extractComparison||extractComparison;
+  const oauth=dependencies.oauth||createOAuth(env);
   const log=line=>(dependencies.log||console.info)(line);
   let inFlight=0;
   const datasets=new Map();
@@ -210,6 +212,34 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
     try{
       if(req.method==='GET'&&url.pathname==='/api/health'){
         return send(res,200,{status:'ok'});
+      }
+      // ── 知乎登录 ──
+      if(req.method==='GET'&&url.pathname==='/auth/login'){
+        if(!oauth.available)return send(res,503,{error:'知乎登录暂未开放。'});
+        const {location,cookie}=oauth.begin();
+        res.writeHead(302,{Location:location,'Set-Cookie':cookie,'Cache-Control':'no-store'});
+        return res.end();
+      }
+      if(req.method==='GET'&&oauth.available&&url.pathname===oauth.callbackPath
+        &&['state','authorization_code','code'].some(key=>url.searchParams.has(key))){
+        try{
+          const {cookies}=await oauth.complete(url.searchParams,parseCookies(req.headers.cookie));
+          log(JSON.stringify({event:'login'}));
+          res.writeHead(302,{Location:'/?login=ok','Set-Cookie':cookies,'Cache-Control':'no-store'});
+        }catch(error){
+          log(JSON.stringify({event:'login_failed',reason:error.reason||'upstream'}));
+          res.writeHead(302,{Location:'/?login=failed','Set-Cookie':oauth.clearLoginCookie(),'Cache-Control':'no-store'});
+        }
+        return res.end();
+      }
+      if(req.method==='GET'&&url.pathname==='/api/me'){
+        const user=oauth.available?oauth.current(parseCookies(req.headers.cookie)):null;
+        return send(res,200,{available:oauth.available,user:user?{name:user.name,headline:user.headline,avatar:user.avatar}:null});
+      }
+      if(req.method==='POST'&&url.pathname==='/auth/logout'){
+        if(req.headers.origin&&new URL(req.headers.origin).host!==req.headers.host)return send(res,403,{error:'请求来源不匹配'});
+        res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Set-Cookie':oauth.end(parseCookies(req.headers.cookie))});
+        return res.end('{"ok":true}');
       }
       if(req.method==='GET'&&url.pathname==='/api/config'){
         const config=configuration(env);

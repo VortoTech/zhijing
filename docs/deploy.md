@@ -51,6 +51,13 @@ DNS（`zhijing` A 记录 → <服务器 IP>）生效后：
 certbot --nginx -d zhijing.vortotech.com
 ```
 
+## 启用知乎登录
+
+1. 在赛事页面创建项目，领取 App ID 与 App Key；知乎登录回调地址登记为 `https://zhijing.vortotech.com/auth/callback`（与配置逐字一致，无尾部斜杠）。
+2. 在本机 `.env.local` 填 `ZHIHU_OAUTH_APP_ID`、`ZHIHU_OAUTH_APP_KEY`、`ZHIHU_OAUTH_REDIRECT_URI`，不要贴到聊天里。
+3. 只把这三行同步到服务器 `/etc/zhijing/zhijing.env`（不打印值），`systemctl restart zhijing`。
+4. 用自己的知乎账号在公网实际走一遍登录、退出；确认 `/api/me` 返回昵称，浏览器、日志里没有 App Key 和 token。
+
 ## 修改配置
 
 编辑 `/etc/zhijing/zhijing.env` 后 `systemctl restart zhijing`。不要把其中的值贴到聊天、日志、截图或视频里。

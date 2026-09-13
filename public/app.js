@@ -361,7 +361,40 @@ $('ask-form').addEventListener('submit',event=>{
   load(view);
 });
 
+// ── 知乎登录：没配置凭据时不显示；OAuth token 只在服务端，浏览器只拿到昵称和头像 ──
+function renderAccount(me,note=''){
+  const box=$('account');
+  if(!me?.available){clear(box);return;}
+  const parts=[];
+  if(me.user){
+    if(me.user.avatar)parts.push(el('img',{class:'avatar',src:me.user.avatar,alt:'',width:24,height:24,referrerpolicy:'no-referrer'}));
+    parts.push(el('span',{class:'account-name',text:me.user.name,title:me.user.headline||false}));
+    parts.push(button('退出',async()=>{
+      try{await fetch('/auth/logout',{method:'POST',headers:{'content-type':'application/json'}});}catch{}
+      renderAccount({available:true,user:null},'已退出。');
+    },{class:'link-btn'}));
+  }else{
+    parts.push(el('a',{class:'login-btn',href:'/auth/login',text:'用知乎登录'}));
+  }
+  if(note)parts.unshift(el('span',{class:'account-note',text:note}));
+  box.replaceChildren(...parts);
+}
+async function loadAccount(){
+  const params=new URLSearchParams(location.search);
+  const result=params.get('login');
+  if(result){
+    params.delete('login');
+    try{history.replaceState(null,'',location.pathname+(params.toString()?'?'+params:''));}catch{}
+  }
+  try{
+    const res=await fetch('/api/me',{signal:AbortSignal.timeout(8000)});
+    if(!res.ok)return;
+    renderAccount(await res.json(),result==='ok'?'已用知乎账号登录':result==='failed'?'知乎登录没有完成，可以再试一次':'');
+  }catch{}
+}
+
 async function boot(){
+  loadAccount();
   try{
     const res=await fetch('/api/config',{signal:AbortSignal.timeout(10000)});
     if(!res.ok)throw new Error('配置读取失败');

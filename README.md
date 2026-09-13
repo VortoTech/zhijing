@@ -139,6 +139,16 @@ data/
 
 （两类话题声明的覆盖率 0.52 / 0.14 与实测差 4.7 / 1.0 个百分点，均已复核一致。）
 
+## 知乎登录（2026-09-13）
+
+按知乎 skill 包 `hackathon-oauth.md` / `oauth.md` / `hackathon-user-profile-api.md` 实现（`src/oauth.mjs`）：
+
+- `GET /auth/login` → 跳转 `openapi.zhihu.com/authorize`；回调路径取自 `ZHIHU_OAUTH_REDIRECT_URI`（建议 `/auth/callback`），同时接受 `authorization_code` 与 `code`；`POST /auth/logout` 退出；`GET /api/me` 返回 `{available, user}`。
+- `state` 用密码学随机数生成、绑定当前浏览器（`zj_login` Cookie）、10 分钟过期、回调时先原子消费再校验；重复、缺失、其他浏览器、过期一律拒绝。
+- App Key 只在服务端换 token；OAuth access_token 只用来读一次 `/user`，读完即弃、不存储；浏览器只持有随机会话号 `zj_sid`（HttpOnly、SameSite=Lax，HTTPS 下 Secure），会话存在进程内存，7 天有效，重启后需重新登录。
+- `uid` 超出 JS 安全整数，解析前改写为字符串无损保存；头像只接受 `*.zhimg.com`；日志只记登录成功/失败原因，不记用户标识和凭据。
+- 三项配置缺一则登录关闭，页面不显示登录按钮。测试全部使用模拟的知乎接口，**真实授权联调要在拿到凭据后由本人完成**。
+
 ## 差异化：原话下面挂评论区的反驳（2026-09-13）
 
 改成两边对比后，页面乍看和其他做「分歧 / 成立条件」的队伍很像。拉开差距靠别人结构上做不到的三件事，都要在页面上看得见：

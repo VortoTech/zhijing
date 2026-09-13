@@ -310,6 +310,19 @@ progress{width:100%;height:12px;accent-color:var(--accent);}
 .branch-when .arrow{color:var(--ink-3);margin:0 6px;font-weight:400;}
 .branch .evidence blockquote{background:rgba(255,255,255,.75);}
 .side.b .evidence blockquote,.branch.b .evidence blockquote{border-left-color:var(--opt-b);}
+/* ── 顶栏与知乎登录 ─────────────────────────────── */
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 14px;}
+.topbar .brand{margin:0;}
+.account{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-2);min-width:0;}
+.avatar{width:24px;height:24px;border-radius:50%;object-fit:cover;flex:none;}
+.account-name{max-width:10em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.account-note{color:var(--ink-3);}
+.login-btn{
+  font-size:13px;color:var(--accent);text-decoration:none;white-space:nowrap;
+  border:1px solid var(--accent);border-radius:999px;padding:4px 12px;
+}
+.login-btn:hover{background:var(--accent-soft);}
+
 /* ── 精简：结论先行，原话点开再看 ───────────────── */
 .hero h1{font-size:26px;}
 .lede{margin-bottom:14px;}
