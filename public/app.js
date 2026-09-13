@@ -1,4 +1,4 @@
-import {buildReadingMap} from '/engine.js';
+import {buildReadingMap,pushbackFor} from '/engine.js';
 import {createReadingSession} from '/session.js';
 
 // 示例问题：第一个有提前整理好的样本，点开立即出结果；其余走实时检索。
@@ -121,14 +121,56 @@ function sourceLink(record,label='打开知乎原文 ↗'){
 }
 
 // ── 对比图：默认只给结论，原话点开再看 ──
+// 署名：原话归还给答主，也方便读者判断是谁说的。
+function attribution(e,record){
+  if(!record)return e.kind==='comment'?'读者评论':'回答';
+  const who=record.author||'匿名用户';
+  return e.kind==='comment'?`读者评论 · 在 ${who} 的回答下`:`${who} · ${record.voteUp??'—'} 赞`;
+}
+function pushbackOf(e,byId){return pushbackFor(byId.get(e.recordId),e);}
+function onlyConditions(list){return list.every(o=>o.type==='adds_condition');}
+function pushbackChip(evidence,byId){
+  const all=evidence.flatMap(e=>pushbackOf(e,byId));
+  if(!all.length)return null;
+  return el('span',{class:'pb-chip'+(onlyConditions(all)?' cond':''),text:onlyConditions(all)?'有人补了前提':'有人不同意'});
+}
+function countPushback(block,records){
+  if(block?.status!=='complete')return 0;
+  const byId=new Map(records.map(r=>[r.id,r]));
+  const evidence=[...block.sides.flatMap(s=>s.reasons.flatMap(r=>r.evidence)),...block.forks.flatMap(f=>f.branches.flatMap(b=>b.evidence))];
+  return evidence.filter(e=>pushbackOf(e,byId).length).length;
+}
+// 突出点：被引用的高赞原话下面，直接挂评论区里读者当场的反驳或补充，永远展示读者原话。
+function pushbackBlock(list){
+  if(!list.length)return null;
+  const cond=onlyConditions(list);
+  return el('div',{class:'pushback'+(cond?' cond':'')},[
+    el('p',{class:'pushback-head',text:(cond?'评论区有读者补了前提':'评论区有读者当场不同意')+(list.length>1?`（${list.length} 条）`:'')}),
+    ...list.map(o=>el('figure',{class:'pb-item'},[
+      el('blockquote',{text:o.commentText}),
+      el('figcaption',{text:o.typeLabel+' · '+(o.direct?'针对这句话':'针对这条回答')+' · 读者评论原话'})
+    ]))
+  ]);
+}
+// 核对：当场展示这句话在原回答里的位置，回答「AI 会不会编」。
+function verifyPanel(e,record){
+  return el('div',{class:'verify-panel',hidden:true},e.kind==='answer'
+    ?[context(record,e.text),el('p',{class:'note',text:'这是知乎接口返回的这条回答原文（摘要），高亮的是被引用的那一句，一字未改。完整回答请点「原文」。'})]
+    :[el('p',{class:'note',text:'这是一条读者评论，程序按编号整条取出，上面就是评论全文。它在这条回答下面：'}),el('p',{class:'quote',text:cleanTitle(record.title)})]);
+}
 function evidenceFigure(e,byId){
   const record=byId.get(e.recordId);
+  const panel=record?verifyPanel(e,record):null;
+  const toggle=panel?button('核对',()=>{
+    panel.hidden=!panel.hidden;
+    toggle.textContent=panel.hidden?'核对':'收起核对';
+    toggle.setAttribute('aria-expanded',String(!panel.hidden));
+  },{class:'link-btn','aria-expanded':'false'}):null;
   return el('figure',{class:'evidence'},[
     el('blockquote',{text:e.text}),
-    el('figcaption',{title:record?cleanTitle(record.title):false},[
-      (e.kind==='comment'?'评论':'回答')+(record?' · '+(record.voteUp??'—')+' 赞 ':''),
-      record?sourceLink(record,'原文 ↗'):null
-    ])
+    el('figcaption',{},[el('span',{text:attribution(e,record)}),toggle,record?sourceLink(record,'原文 ↗'):null]),
+    panel,
+    pushbackBlock(pushbackOf(e,byId))
   ]);
 }
 function comparisonSections(block,records,sample){
@@ -145,13 +187,16 @@ function comparisonSections(block,records,sample){
   const [,B]=block.options;
   const side=option=>option===B?' b':'';
   const sections=[];
+  // 宽屏默认展开第一条带评论区反驳的理由，让突出点不用点就能看到。
+  const firstPushed=matchMedia('(min-width: 641px)').matches
+    ?block.sides.flatMap(s=>s.reasons).find(r=>pushbackChip(r.evidence,byId)):null;
   if(hasSides)sections.push(el('section',{class:'compare-block','aria-labelledby':'sides-title'},[
     el('h3',{id:'sides-title',class:'section-title',text:'两边的理由'}),
     el('div',{class:'sides'},block.sides.map(s=>el('div',{class:'side'+side(s.option)},[
       el('h4',{class:'side-title'},['选',el('span',{class:'opt'+side(s.option),text:s.option})]),
       s.reasons.length
-        ?el('ul',{class:'reasons'},s.reasons.map(r=>el('li',{},[el('details',{class:'reason'},[
-          el('summary',{text:r.label}),
+        ?el('ul',{class:'reasons'},s.reasons.map(r=>el('li',{},[el('details',{class:'reason',open:r===firstPushed},[
+          el('summary',{},[r.label,pushbackChip(r.evidence,byId)]),
           ...r.evidence.map(e=>evidenceFigure(e,byId))
         ])])))
         :el('p',{class:'note',text:'没找到这一边的理由。'})
@@ -160,15 +205,18 @@ function comparisonSections(block,records,sample){
   if(block.forks.length){
     const shown=state.showAllForks?block.forks:block.forks.slice(0,MAX_FORKS);
     const rest=block.forks.length-shown.length;
+    // 宽屏默认展开一个条件示范原话，优先挑评论区有人当场回应的那个。
+    const openIndex=Math.max(0,shown.findIndex(f=>f.branches.some(b=>pushbackChip(b.evidence,byId))));
+    const wide=matchMedia('(min-width: 641px)').matches;
     sections.push(el('section',{class:'compare-block','aria-labelledby':'forks-title'},[
       el('h3',{id:'forks-title',class:'section-title',text:'决定你选哪边'}),
       el('p',{class:'note',text:'看看你属于哪种情况。'}),
-      // 宽屏默认展开第一个条件示范「可以核对原话」；手机上全部收起，免得首屏被原话占满。
-      el('ol',{class:'forks'},shown.map((f,i)=>el('li',{},[el('details',{class:'fork',open:i===0&&matchMedia('(min-width: 641px)').matches},[
+      // 手机上全部收起，免得首屏被原话占满。
+      el('ol',{class:'forks'},shown.map((f,i)=>el('li',{},[el('details',{class:'fork',open:wide&&i===openIndex},[
         el('summary',{},[
           el('span',{class:'fork-label',text:f.label}),
           el('span',{class:'pills'},f.branches.map(b=>el('span',{class:'pill'+side(b.lean)},[
-            b.when,el('span',{class:'arrow',text:'→'}),el('strong',{text:b.lean})
+            b.when,el('span',{class:'arrow',text:'→'}),el('strong',{text:b.lean}),pushbackChip(b.evidence,byId)
           ])))
         ]),
         el('div',{class:'branches'},f.branches.map(b=>el('div',{class:'branch'+side(b.lean)},b.evidence.map(e=>evidenceFigure(e,byId)))))
@@ -244,11 +292,13 @@ function render(){
   if(state.filter==='flagged'&&!flagged.length)state.filter='focused';
   const visible=state.filter==='flagged'?flagged:state.filter==='focused'?focused:state.filter==='incomplete'?incomplete:data.records;
 
+  const pushed=countPushback(dataset.comparison,data.records);
   // 结果头只留问题和一行说明，AI 与数据口径收进页面底部。
   const head=[
     el('h2',{class:'result-title',text:data.meta.question||data.topic.title}),
     el('p',{class:'result-meta'},[
-      (sample?'示例数据 · ':'')+`读了 ${focused.length} 条相关回答 · AI 归纳，原话一字未改`,
+      (sample?'示例数据 · ':'')+`读了 ${focused.length} 条相关回答 · AI 归纳，原话一字未改`
+        +(pushed?` · ${pushed} 句原话在评论区被读者当场反驳或补充`:''),
       button('怎么来的？',()=>{$('data-details').open=true;$('data-details').scrollIntoView({behavior:'smooth',block:'start'});},{class:'link-btn'}),
       sample&&state.config?.askReady?button('用实时检索重新找',()=>load({kind:'ask',question:data.topic.title}),{class:'link-btn'}):null
     ])
@@ -282,6 +332,7 @@ function render(){
   $('source-note').replaceChildren(
     el('p',{text:'标题和分支说明由 AI 归纳，只帮你把两边摆清楚，不替你做决定。有人提出异议，不代表异议成立；没发现异议，也不代表回答适用于你。'}),
     el('p',{text:'对比图由模型从赞数靠前的 24 条相关回答和它们的精选评论里整理：程序先把回答切句编号，模型只挑编号，页面按编号取原文，所以引号里的话一字未改。归纳本身可能不全或不准。'}),
+    el('p',{text:'原话下面挂的读者反驳，来自同一条回答的精选评论，由'+(sample?'人工标注':'模型归类并复核投票')+'挑出，并展示评论原话供你判断。标「针对这句话」的，是评论回应的原句与这句有重合；其余是针对整条回答。有人反驳不代表反驳成立。'}),
     el('p',{text:sample?'评论区的反驳由人工标注，并校验引文来源。':'评论区的反驳由模型归类，并逐字校验引文来源。引文存在不代表归类一定正确。'}),
     el('p',{text:(meta.sourceNote||meta.description||'本次检索取得的有限样本。')+' '+(sample?'样本生成时间':'检索时间')+'：'+(meta.builtAt||meta.capturedAt||'未记录')+'。'}),
     el('p',{text:'「相关回答」按标题关键词筛选，可能漏选；另有 '+(data.records.length-focused.length)+' 条在「全部检索结果」里。统计不代表知乎全量，每条最多取得 3 条精选评论。'})

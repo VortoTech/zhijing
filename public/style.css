@@ -343,6 +343,30 @@ progress{width:100%;height:12px;accent-color:var(--accent);}
 .sources{margin-top:18px;border-top:1px solid var(--line);padding-top:12px;}
 .sources > summary{font-size:15px;font-weight:600;color:var(--ink-2);margin-bottom:10px;}
 
+/* ── 突出点：原话下面的评论区反驳；署名与核对 ───── */
+.evidence figcaption{display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;}
+.evidence figcaption .link-btn{padding:0;font-size:12.5px;}
+.verify-panel{margin:6px 0 2px;padding:8px 10px;background:var(--panel);border:1px dashed var(--line-2);border-radius:var(--radius-sm);}
+.verify-panel .quote{font-size:13.5px;margin:0 0 6px;}
+.verify-panel .note{margin:0;}
+.pushback{
+  margin:6px 0 4px 14px;padding:8px 10px;background:var(--disputed-bg);
+  border-left:2px solid var(--disputed-line);border-radius:0 var(--radius-sm) var(--radius-sm) 0;
+}
+.pushback.cond{background:var(--conditional-bg);border-left-color:var(--conditional-line);}
+.pushback-head{margin:0 0 6px;font-size:13px;font-weight:650;color:var(--disputed-ink);}
+.pushback.cond .pushback-head{color:var(--conditional-ink);}
+.pb-item{margin:0 0 6px;}
+.pb-item:last-child{margin-bottom:0;}
+.pb-item blockquote{margin:0;font-size:14px;line-height:1.7;color:var(--ink);word-break:break-word;}
+.pb-item figcaption{margin-top:2px;font-size:12px;color:var(--ink-3);}
+.pb-chip{
+  display:inline-block;margin-left:8px;padding:1px 8px;border-radius:999px;vertical-align:1px;
+  font-size:11.5px;font-weight:650;white-space:nowrap;
+  background:var(--disputed-bg);color:var(--disputed-ink);border:1px solid var(--disputed-line);
+}
+.pb-chip.cond{background:var(--conditional-bg);color:var(--conditional-ink);border-color:var(--conditional-line);}
+
 .section-title{font-size:18px;margin:0 0 4px;}
 .conditions{
   background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);

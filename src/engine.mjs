@@ -69,6 +69,22 @@ export function situationFit(record,situation,topic){
   return evidence.length?{level:'reference',evidence,note:'相关条件原话，仅供对照，不判断适用性。'}:null;
 }
 
+// 对比图里被引用的一句回答原话，同一条回答的评论区里读者的反驳或补充。
+// 评论回应的原句与这句有 8 字以上重合，标为「针对这句话」并排在前面；其余是针对整条回答。
+export function pushbackFor(record,evidence){
+  if(!record||evidence?.kind!=='answer')return [];
+  return (record.objections||[])
+    .map(o=>({...o,direct:sharesRun(o.targetClaim,evidence.text,8)}))
+    .sort((a,b)=>Number(b.direct)-Number(a.direct));
+}
+
+function sharesRun(a,b,min){
+  if(!a||!b)return false;
+  if(a.includes(b)||b.includes(a))return true;
+  for(let i=0;i+min<=a.length;i++)if(b.includes(a.slice(i,i+min)))return true;
+  return false;
+}
+
 export function focusRecord(record,topic){
   return !topic.focusTerms?.length||topic.focusTerms.some(term=>record.title.includes(term));
 }
