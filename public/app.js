@@ -121,25 +121,38 @@ function sourceLink(record,label='打开知乎原文 ↗'){
   }catch{return null;}
 }
 
-// ── 对比图：默认只给结论，原话点开再看 ──
+// ── 镜像对照板：左栏固定是选项 A，右栏固定是选项 B；默认只给结论，原话点开再看 ──
 // 署名：原话归还给答主，也方便读者判断是谁说的。
 function attribution(e,record){
   if(!record)return e.kind==='comment'?'读者评论':'回答';
   const who=record.author||'匿名用户';
   return e.kind==='comment'?`读者评论 · 在 ${who} 的回答下`:`${who} · ${record.voteUp??'—'} 赞`;
 }
-function pushbackOf(e,byId){return pushbackFor(byId.get(e.recordId),e);}
 function onlyConditions(list){return list.every(o=>o.type==='adds_condition');}
-function pushbackChip(evidence,byId){
-  const all=evidence.flatMap(e=>pushbackOf(e,byId));
-  if(!all.length)return null;
-  return el('span',{class:'pb-chip'+(onlyConditions(all)?' cond':''),text:onlyConditions(all)?'有人补了前提':'有人不同意'});
+function evidenceOf(block){
+  return [...block.sides.flatMap(s=>s.reasons.flatMap(r=>r.evidence)),...block.forks.flatMap(f=>f.branches.flatMap(b=>b.evidence))];
 }
-function countPushback(block,records){
-  if(block?.status!=='complete')return 0;
-  const byId=new Map(records.map(r=>[r.id,r]));
-  const evidence=[...block.sides.flatMap(s=>s.reasons.flatMap(r=>r.evidence)),...block.forks.flatMap(f=>f.branches.flatMap(b=>b.evidence))];
-  return evidence.filter(e=>pushbackOf(e,byId).length).length;
+// 每条读者反驳全页只出现一次：优先挂在它针对的那一句下面；
+// 针对整条回答的，挂在这条回答第一次被引用的地方，不再跟着同一回答的每句原话重复。
+function assignPushback(block,byId){
+  const assigned=new Map(),used=new Set();
+  for(const pass of ['direct','rest']){
+    for(const e of evidenceOf(block)){
+      for(const o of pushbackFor(byId.get(e.recordId),e)){
+        const key=e.recordId+':'+o.commentIndex;
+        if(used.has(key)||(pass==='direct'&&!o.direct))continue;
+        used.add(key);
+        assigned.set(e,[...(assigned.get(e)||[]),o]);
+      }
+    }
+  }
+  return {of:e=>assigned.get(e)||[],total:used.size};
+}
+function pushbackChip(evidence,pb){
+  const all=evidence.flatMap(e=>pb.of(e));
+  if(!all.length)return null;
+  const cond=onlyConditions(all);
+  return el('span',{class:'pb-chip'+(cond?' cond':''),text:cond?'有人补了前提':'有人不同意'});
 }
 // 突出点：被引用的高赞原话下面，直接挂评论区里读者当场的反驳或补充，永远展示读者原话。
 function pushbackBlock(list){
@@ -159,7 +172,7 @@ function verifyPanel(e,record){
     ?[context(record,e.text),el('p',{class:'note',text:'这是知乎接口返回的这条回答原文（摘要），高亮的是被引用的那一句，一字未改。完整回答请点「原文」。'})]
     :[el('p',{class:'note',text:'这是一条读者评论，程序按编号整条取出，上面就是评论全文。它在这条回答下面：'}),el('p',{class:'quote',text:cleanTitle(record.title)})]);
 }
-function evidenceFigure(e,byId){
+function evidenceFigure(e,byId,pb){
   const record=byId.get(e.recordId);
   const panel=record?verifyPanel(e,record):null;
   const toggle=panel?button('核对',()=>{
@@ -171,7 +184,7 @@ function evidenceFigure(e,byId){
     el('blockquote',{text:e.text}),
     el('figcaption',{},[el('span',{text:attribution(e,record)}),toggle,record?sourceLink(record,'原文 ↗'):null]),
     panel,
-    pushbackBlock(pushbackOf(e,byId))
+    pushbackBlock(pb.of(e))
   ]);
 }
 function comparisonSections(block,records,sample){
@@ -181,51 +194,62 @@ function comparisonSections(block,records,sample){
     const message=block?.status==='failed'?'这次没能整理出对比（模型请求失败）。'
       :block?.status==='not_comparable'?'这个问题不太像二选一，没法并排对比。换成「A 还是 B」的问法试试。'
       :sample&&!block?'这个示例还没有整理好的对比图。':'这次没从原话里整理出明确的对比，可以直接看下面的原始回答。';
-    return [el('section',{class:'compare-block'},[el('p',{class:'cond-empty'},[
+    return [el('div',{class:'board-empty'},[
       message,block?.status==='failed'?button('重新整理',()=>load(state.view,true),{class:'link-btn'}):null
-    ])])];
+    ])];
   }
-  const [,B]=block.options;
-  const side=option=>option===B?' b':'';
-  const sections=[];
-  // 宽屏默认展开第一条带评论区反驳的理由，让突出点不用点就能看到。
-  const firstPushed=matchMedia('(min-width: 641px)').matches
-    ?block.sides.flatMap(s=>s.reasons).find(r=>pushbackChip(r.evidence,byId)):null;
-  if(hasSides)sections.push(el('section',{class:'compare-block','aria-labelledby':'sides-title'},[
-    el('h3',{id:'sides-title',class:'section-title',text:'两边的理由'}),
-    el('div',{class:'sides'},block.sides.map(s=>el('div',{class:'side'+side(s.option)},[
-      el('h4',{class:'side-title'},['选',el('span',{class:'opt'+side(s.option),text:s.option})]),
-      s.reasons.length
-        ?el('ul',{class:'reasons'},s.reasons.map(r=>el('li',{},[el('details',{class:'reason',open:r===firstPushed},[
-          el('summary',{},[r.label,pushbackChip(r.evidence,byId)]),
-          ...r.evidence.map(e=>evidenceFigure(e,byId))
-        ])])))
-        :el('p',{class:'note',text:'没找到这一边的理由。'})
-    ])))
-  ]));
+  const [A,B]=block.options;
+  const sideOf=option=>option===B?'b':'a';
+  const pb=assignPushback(block,byId);
+  const wide=matchMedia('(min-width: 641px)').matches;
+  const tag=option=>el('p',{class:'cell-tag '+sideOf(option),text:'选'+option});
+
+  // 表头：两个选项，滚动时固定在顶部，下面每一格都按左右对应。
+  const parts=[el('div',{class:'board-head'},[A,B].map(option=>el('div',{class:'board-col '+sideOf(option)},[
+    el('span',{class:'col-kicker',text:'选'}),el('span',{class:'col-name',text:option})
+  ])))];
+
+  if(hasSides){
+    // 宽屏默认展开第一条带评论区反驳的理由，让突出点不用点就能看到。
+    const firstPushed=wide?block.sides.flatMap(s=>s.reasons).find(r=>pushbackChip(r.evidence,pb)):null;
+    const reasonsOf=option=>block.sides.find(s=>s.option===option)?.reasons||[];
+    parts.push(el('section',{class:'board-section','aria-labelledby':'sides-title'},[
+      el('h3',{id:'sides-title',class:'board-label',text:'他们怎么说'}),
+      el('div',{class:'board-row'},[A,B].map(option=>el('div',{class:'board-cell '+sideOf(option)},[
+        tag(option),
+        reasonsOf(option).length
+          ?el('ul',{class:'reasons'},reasonsOf(option).map(r=>el('li',{},[el('details',{class:'reason',open:r===firstPushed},[
+            el('summary',{},[el('span',{class:'reason-text',text:r.label}),pushbackChip(r.evidence,pb)]),
+            el('div',{class:'reason-body'},r.evidence.map(e=>evidenceFigure(e,byId,pb)))
+          ])])))
+          :el('p',{class:'note',text:'这一边没找到理由。'})
+      ])))
+    ]));
+  }
+
   if(block.forks.length){
     const shown=state.showAllForks?block.forks:block.forks.slice(0,MAX_FORKS);
     const rest=block.forks.length-shown.length;
-    // 宽屏默认展开一个条件示范原话，优先挑评论区有人当场回应的那个。
-    const openIndex=Math.max(0,shown.findIndex(f=>f.branches.some(b=>pushbackChip(b.evidence,byId))));
-    const wide=matchMedia('(min-width: 641px)').matches;
-    sections.push(el('section',{class:'compare-block','aria-labelledby':'forks-title'},[
-      el('h3',{id:'forks-title',class:'section-title',text:'决定你选哪边'}),
-      el('p',{class:'note',text:'看看你属于哪种情况。'}),
-      // 手机上全部收起，免得首屏被原话占满。
+    // 宽屏默认展开一个条件示范原话，优先挑评论区有人当场回应的那个；手机上全部收起。
+    const openIndex=Math.max(0,shown.findIndex(f=>f.branches.some(b=>pushbackChip(b.evidence,pb))));
+    parts.push(el('section',{class:'board-section','aria-labelledby':'forks-title'},[
+      el('h3',{id:'forks-title',class:'board-label',text:'你属于哪一边'}),
       el('ol',{class:'forks'},shown.map((f,i)=>el('li',{},[el('details',{class:'fork',open:wide&&i===openIndex},[
         el('summary',{},[
-          el('span',{class:'fork-label',text:f.label}),
-          el('span',{class:'pills'},f.branches.map(b=>el('span',{class:'pill'+side(b.lean)},[
-            b.when,el('span',{class:'arrow',text:'→'}),el('strong',{text:b.lean}),pushbackChip(b.evidence,byId)
-          ])))
+          el('span',{class:'fork-q',text:f.label}),
+          el('span',{class:'fork-cells'},f.branches.map(b=>el('span',{class:'fork-cell '+sideOf(b.lean)},[
+            el('span',{class:'fork-when',text:b.when}),pushbackChip(b.evidence,pb)
+          ]))),
+          el('span',{class:'fork-toggle','aria-hidden':'true'})
         ]),
-        el('div',{class:'branches'},f.branches.map(b=>el('div',{class:'branch'+side(b.lean)},b.evidence.map(e=>evidenceFigure(e,byId)))))
+        el('div',{class:'board-row fork-evidence'},f.branches.map(b=>el('div',{class:'board-cell '+sideOf(b.lean)},[
+          tag(b.lean),...b.evidence.map(e=>evidenceFigure(e,byId,pb))
+        ])))
       ])]))),
-      rest>0?button('再看 '+rest+' 个条件',()=>{state.showAllForks=true;render();},{class:'btn ghost small more-forks'}):null
+      rest>0?button('再看 '+rest+' 个条件',()=>{state.showAllForks=true;render();},{class:'more-forks'}):null
     ]));
   }
-  return sections;
+  return [el('div',{class:'board'},parts)];
 }
 
 function context(record,target){
@@ -295,13 +319,14 @@ function render(){
   if(state.filter==='flagged'&&!flagged.length)state.filter='focused';
   const visible=state.filter==='flagged'?flagged:state.filter==='focused'?focused:state.filter==='incomplete'?incomplete:data.records;
 
-  const pushed=countPushback(dataset.comparison,data.records);
+  const comparison=dataset.comparison;
+  const pushed=comparison?.status==='complete'?assignPushback(comparison,new Map(data.records.map(r=>[r.id,r]))).total:0;
   // 结果头只留问题和一行说明，AI 与数据口径收进页面底部。
   const head=[
     el('h2',{class:'result-title',text:data.meta.question||data.topic.title}),
     el('p',{class:'result-meta'},[
-      (sample?'示例数据 · ':saved?`示例（${savedDay} 实时检索保存）· `:'')+`读了 ${focused.length} 条相关回答 · AI 归纳，原话一字未改`
-        +(pushed?` · ${pushed} 句原话在评论区被读者当场反驳或补充`:''),
+      el('span',{text:(sample?'示例数据 · ':saved?`示例 · ${savedDay} 实时检索保存 · `:'')+`读了 ${focused.length} 条相关回答`
+        +(pushed?` · 评论区 ${pushed} 条读者反驳或补充`:'')+' · 原话一字未改'}),
       button('怎么来的？',()=>{$('data-details').open=true;$('data-details').scrollIntoView({behavior:'smooth',block:'start'});},{class:'link-btn'}),
       (sample||saved)&&state.config?.askReady?button('用实时检索重新找',()=>load({kind:'ask',question:saved?data.meta.question:data.topic.title},saved),{class:'link-btn'}):null
     ])
@@ -310,7 +335,7 @@ function render(){
     head.push(el('p',{class:'note warn'},['这次结果不完整：'+incomplete.length+' 条分析没完成，'+(data.meta.failedQueries||0)+' 路检索失败。',button('重新分析',()=>load(state.view,true),{class:'link-btn'})]));
   }
   $('result-head').replaceChildren(...head);
-  $('compare').replaceChildren(...comparisonSections(dataset.comparison,data.records,sample));
+  $('compare').replaceChildren(...comparisonSections(comparison,data.records,sample));
 
   $('sources-summary').textContent=`原始回答与评论区 · ${focused.length} 条`+(flagged.length?`（${flagged.length} 条被读者反驳）`:'');
   $('sources-note').replaceChildren(
@@ -335,7 +360,7 @@ function render(){
   $('source-note').replaceChildren(
     el('p',{text:'标题和分支说明由 AI 归纳，只帮你把两边摆清楚，不替你做决定。有人提出异议，不代表异议成立；没发现异议，也不代表回答适用于你。'}),
     el('p',{text:'对比图由模型从赞数靠前的 24 条相关回答和它们的精选评论里整理：程序先把回答切句编号，模型只挑编号，页面按编号取原文，所以引号里的话一字未改。归纳本身可能不全或不准。'}),
-    el('p',{text:'原话下面挂的读者反驳，来自同一条回答的精选评论，由'+(sample?'人工标注':'模型归类并复核投票')+'挑出，并展示评论原话供你判断。标「针对这句话」的，是评论回应的原句与这句有重合；其余是针对整条回答。有人反驳不代表反驳成立。'}),
+    el('p',{text:'原话下面挂的读者反驳，来自同一条回答的精选评论，由'+(sample?'人工标注':'模型归类并复核投票')+'挑出，并展示评论原话供你判断。每条反驳全页只出现一次：标「针对这句话」的，是评论回应的原句与这句有重合；其余是针对整条回答，挂在这条回答第一次被引用的地方。有人反驳不代表反驳成立。'}),
     el('p',{text:sample?'评论区的反驳由人工标注，并校验引文来源。':'评论区的反驳由模型归类，并逐字校验引文来源。引文存在不代表归类一定正确。'}),
     el('p',{text:(meta.sourceNote||meta.description||'本次检索取得的有限样本。')+' '+(sample?'样本生成时间':'检索时间')+'：'+(meta.builtAt||meta.capturedAt||'未记录')+'。'}),
     el('p',{text:'「相关回答」按标题关键词筛选，可能漏选；另有 '+(data.records.length-focused.length)+' 条在「全部检索结果」里。统计不代表知乎全量，每条最多取得 3 条精选评论。'})
