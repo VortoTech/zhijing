@@ -307,8 +307,11 @@ function deskEntry(block,byId){
 function deskHeader(){
   const [,label,hint]=DESK_MODES.find(([id])=>id===state.desk.mode)||[];
   const busy=state.desk.rt.pending||state.desk.db.pending;
+  const said=situationsList().length;
   return el('div',{class:'desk-crumb'},[
     el('span',{class:'desk-k',text:'观点桌面'}),el('strong',{text:label}),el('span',{class:'note',text:hint}),
+    said?el('span',{class:'desk-ctx',text:`会结合你在看两边说的 ${said} 条情况`})
+      :button('先在「看两边」告诉顾问你的情况，讨论会更贴近你',()=>openChat(),{class:'link-btn desk-ctx-empty'}),
     button('换个玩法',()=>{state.desk.mode=null;render();},{class:'link-btn',disabled:busy})
   ]);
 }
@@ -322,7 +325,8 @@ async function deskRequest(body,box,onOk){
   const view=state.view,desk=state.desk;
   box.pending=true;box.error='';render();
   try{
-    const res=await fetch('/api/advice',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ref:viewRef(view),language:i18n.language,...body}),signal:AbortSignal.timeout(120000)});
+    // 带上用户在「看两边」说过的情况：圆桌和辩论也结合他的处境来谈。
+    const res=await fetch('/api/advice',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({ref:viewRef(view),language:i18n.language,selections:selectionsOf(),facts:factsOf(),...body}),signal:AbortSignal.timeout(120000)});
     const data=await res.json().catch(()=>({}));
     if(state.desk!==desk)return;
     if(res.ok)onOk(data);else box.error=data.error||'这次没能完成，请稍后再试。';
@@ -417,7 +421,7 @@ function roundtableView(block,byId){
           el('p',{class:'rt-text',text:t.text}),
           t.refs.length?quotes(`原话 ${t.refs.length}`,t.refs.map(refView)):null
         ])])),
-      rt.pending?el('p',{class:'note rt-pending',text:'几位正在讨论…（约 20–40 秒）'}):null,
+      rt.pending?el('p',{class:'note rt-pending',text:'几位正在讨论…（约 10 秒）'}):null,
       rt.error?el('p',{class:'note warn',text:rt.error}):null
     ]):null,
     rt.turns.length?sayForm:null
@@ -1402,11 +1406,22 @@ function renderSummary(){
   const block=dataset.comparison,reply=lastAdvice();
   const peersTurn=[...state.advisor.turns].reverse().find(t=>t.kind==='peers'&&t.result?.peers?.length);
   const situations=situationsList();
+  // 观点桌面里玩过的：圆桌总结的分歧、辩论站哪边辩了几轮、被承认站得住的点、最后还没回答的追问。
+  const desk=state.desk,dbAgent=desk.db.turns.filter(t=>!t.user);
+  const lastConcede=dbAgent.map(t=>t.concede).filter(Boolean).at(-1);
+  const deskNotes=[
+    desk.rt.divergence?{k:'圆桌八方的分歧',v:desk.rt.divergence}:null,
+    dbAgent.length&&desk.db.side!=null?{k:'辩论场',v:`你站「${block?.options?.[desk.db.side]}」，辩了 ${dbAgent.length} 轮`}:null,
+    lastConcede?{k:'你站得住的地方',v:lastConcede}:null,
+    dbAgent.at(-1)?.question?{k:'还没回答的追问',v:dbAgent.at(-1).question}:null
+  ].filter(Boolean);
+  const deskList=()=>el('dl',{class:'summary-desk'},deskNotes.flatMap(n=>[el('dt',{text:n.k}),el('dd',{text:n.v})]));
   if(!reply){
     body.replaceChildren(el('div',{class:'summary-empty'},[
       el('h3',{text:'还没有可以带走的结论'}),
-      el('p',{class:'note',text:'先在「两边原话」里跟知镜说说你的情况，让它对照一次原话。这里会整理出：你的情况、两边最相关的原话、还缺的信息，和可以先做的一步。'}),
-      state.config?.adviceReady&&block?.status==='complete'?button('去跟知镜说说我的情况',openFullChat,{class:'btn'}):null
+      el('p',{class:'note',text:'先在「看两边」里跟顾问说说你的情况，让它对照一次原话。这里会整理出：你的情况、哪一边的理由更贴近你、还缺的信息，和可以先做的一步。'}),
+      state.config?.adviceReady&&block?.status==='complete'?button('去跟知镜说说我的情况',openFullChat,{class:'btn'}):null,
+      deskNotes.length?el('section',{class:'summary-sec'},[el('h3',{text:'观点桌面里'}),deskList()]):null
     ]));
     return;
   }
@@ -1426,6 +1441,7 @@ function renderSummary(){
       unknown.length?'还没弄清：'+unknown.join('；'):null,
       reply.advice?'可以先做的一步：'+reply.advice.text:null,
       ...peers.map(p=>`处境相似的人（${p.similar}）：“${p.who}”`),
+      ...deskNotes.map(n=>`${n.k}：${n.v}`),
       '原话来自知乎回答与评论，一字未改；判断由 AI 整理，不替你做决定。',
       location.origin+'/?q='+encodeURIComponent(topicQuestion())
     ].filter(Boolean);
@@ -1450,6 +1466,7 @@ function renderSummary(){
     unknown.length?sec('还没弄清的',[el('ul',{class:'bot-list'},unknown.map(text=>el('li',{text})))]):null,
     reply.advice?sec('可以先做的一步（随时可以推翻）',[el('p',{class:'advice-text',text:reply.advice.text})],'summary-next'):null,
     peers.length?sec('处境相似的人怎么说',peers.map(peerCard)):null,
+    deskNotes.length?sec('观点桌面里',[deskList()]):null,
     el('div',{class:'summary-actions'},[
       button('复制这份梳理',copy,{class:'btn'}),
       button('回到看两边接着聊',openFullChat,{class:'btn ghost'}),

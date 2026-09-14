@@ -285,7 +285,8 @@ const ROUNDTABLE_PROMPT=[
   '2. 每条发言不超过 80 字，口语，符合该角色的立场和风格；用到原话或反驳时，把编号写进 evidence，正文里不要出现编号。',
   '3. 不得编造数据、经历或原话里没有的事实；所有角色（包括用户自定义的角色）都不许编造具体的人和事（比如某个邻居、同学的遭遇），要举例就引用原话；不给胜率、概率；角色可以为某一边辩护，但不能替用户做决定，不说「你应该选」。',
   '4. history 是之前的发言，user_says 是用户这次插的话；有的话，这一轮先回应用户，再接着讨论。',
-  '5. 最后写 divergence：一句话（不超过 60 字）说清这几位真正的分歧在哪（通常是看重的东西不同，或默认的前提不同）。',
+  '5. user_situation 是用户自己说过、确认过的情况（可能为空）。有的话，角色们要结合他的这些情况来谈，至少两条发言点名说到他的具体处境；不得编造他没说过的情况。',
+  '6. 最后写 divergence：一句话（不超过 60 字）说清这几位真正的分歧在哪（通常是看重的东西不同，或默认的前提不同）。',
   '只输出 JSON：{"turns":[{"role":"r1","text":"……","evidence":["e3"],"replyTo":null}],"divergence":"……"}'
 ].join('\n');
 
@@ -298,7 +299,8 @@ const DEBATE_PROMPT=[
   '2. rebuttal：用 agent_side 的原话和评论区反驳，打他论点里最薄弱的一环（不超过 120 字）；用到的编号写进 evidence，正文里不要出现编号。',
   '3. question：抛出一个他必须正面回应的追问（不超过 40 字）。',
   '4. message 为空说明用户刚选边还没发言：直接给出 agent_side 最有力的开场论点，concede 可以留空。',
-  '5. 只针对论点，不针对人；不得编造数据或原话里没有的事实；不判胜负，不给胜率，不说「你应该选」。',
+  '5. user_situation 是用户自己说过、确认过的情况（可能为空）。有的话，要拿他自己的情况检验他的立场：他站的这一边和他的处境对不对得上；不得编造他没说过的情况。',
+  '6. 只针对论点，不针对人；不得编造数据或原话里没有的事实；不判胜负，不给胜率，不说「你应该选」。',
   '只输出 JSON：{"concede":"……","rebuttal":"……","evidence":["e3","p1"],"question":"……"}'
 ].join('\n');
 
@@ -318,6 +320,15 @@ const resolveRef=(catalog,id)=>{const item=catalog.items.get(id);return item.typ
 const ANECDOTE=/隔壁|邻居|[小老][王李张刘陈赵]|我的?(同学|朋友|表哥|表姐|表弟|表妹|同事|室友|亲戚)|我(认识|身边)的/;
 const dropAnecdotes=text=>(text.match(/[^，,。！？；!?;]+[，,。！？；!?;]?/g)||[])
   .filter(clause=>!ANECDOTE.test(clause)).join('').replace(/[，,；;]$/,'。').trim();
+
+// 用户在「看两边」选过的条件和确认过的情况：观点桌面的圆桌和辩论也按这些来谈。
+function situationLines(input,catalog){
+  const picked=list(input.selections).map(({fork,branch})=>{
+    const f=catalog.forks[fork],b=f?.branches?.[branch];
+    return b?`${f.label} → ${b.when}`:null;
+  }).filter(Boolean);
+  return [...picked,...list(input.facts).map(f=>`${FACT_KEYS[f.key]||'情况'}：${f.value}`)];
+}
 
 // roles：[{key:'r1',id,name,stance}]。只收认识的角色；回应对象换成角色名。
 export function verifyRoundtable(parsed,catalog,roles){
@@ -340,7 +351,7 @@ export async function roundtableTurn(input,dataset,env=process.env,{chat=chatJSO
   });
   const user={question:input.question,options:catalog.options,materials:catalog.lines,
     roles:roles.map(r=>`${r.key}｜${r.name}｜${r.stance}${r.custom?'（用户自定义的角色）':''}`),
-    history:list(input.history).map(h=>h.text),user_says:input.message||''};
+    history:list(input.history).map(h=>h.text),user_says:input.message||'',user_situation:situationLines(input,catalog)};
   const system=ROUNDTABLE_PROMPT+(input.language==='en'?'\nSpeak in English; source quotations stay verbatim.':'');
   let out=null;
   for(let attempt=0;attempt<2&&!out?.turns.length;attempt++){
@@ -363,7 +374,7 @@ export async function debateTurn(input,dataset,env=process.env,{chat=chatJSON,re
   if(!catalog)throw fail('not_comparable','没有可用的对比材料');
   const userSide=catalog.options[input.side],agentSide=catalog.options[1-input.side];
   const user={question:input.question,options:catalog.options,materials:catalog.lines,user_side:userSide,agent_side:agentSide,
-    history:list(input.history).map(h=>`${h.role==='user'?'用户':'你'}：${h.text}`),message:input.message||''};
+    history:list(input.history).map(h=>`${h.role==='user'?'用户':'你'}：${h.text}`),message:input.message||'',user_situation:situationLines(input,catalog)};
   const system=DEBATE_PROMPT+(input.language==='en'?'\nReply in English; source quotations stay verbatim.':'');
   let out=null;
   for(let attempt=0;attempt<2&&!out;attempt++){

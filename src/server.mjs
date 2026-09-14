@@ -282,9 +282,10 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
     const started=Date.now();
     try{
       if(input.mode!=='advice'){
-        const result=await (input.mode==='roundtable'?roundtable:debateRound)({...input,question:found.question},found.dataset,env);
-        // 日志不记录用户的话和角色设定。
-        log(JSON.stringify({event:input.mode,durationMs:Date.now()-started,roles:input.roles.length,turns:result.turns?.length??null,refs:result.refs?.length??null}));
+        // 和决策顾问用同一份情况：登录且打开「记住」的以数据库为准，否则用页面上这次说的。
+        const result=await (input.mode==='roundtable'?roundtable:debateRound)({...input,question:found.question,facts},found.dataset,env);
+        // 日志不记录用户的话、情况和角色设定，只记条数。
+        log(JSON.stringify({event:input.mode,durationMs:Date.now()-started,roles:input.roles.length,situations:input.selections.length+facts.length,turns:result.turns?.length??null,refs:result.refs?.length??null}));
         return send(res,200,result);
       }
       // 补充检索和实时检索共用每日次数。
@@ -466,7 +467,7 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
       const reason=error.quota?'quota':error.informational?'informational':error.empty?'empty':'upstream';
       log(JSON.stringify({event:'ask_failed',requestId,durationMs:Date.now()-started,reason}));
       if(error.quota)return send(res,429,{error:QUOTA_MESSAGE});
-      if(error.informational)return send(res,422,{informational:true,error:'这个问题更像查资料（政策、流程、数据），答案由规定决定，评论区很少有人争论，知镜帮不上忙。换一个需要做选择、想听听别人经验的问题试试。'});
+      if(error.informational)return send(res,422,{informational:true,error:'知镜适合「A 还是 B」这类要做选择、想听听别人经验的问题；这个问题更像查资料或求方法，评论区很少有人争论。换成二选一的问法试试，比如「考研还是直接工作」。'});
       if(error.empty)return send(res,404,{error:'知乎上没搜到相关回答。换个说法试试，比如写成「A 还是 B」。'});
       return send(res,503,{error:'实时检索或模型分析暂不可用，请稍后重试，或先看看示例。系统没有用示例替换本次结果。'});
     }finally{inFlight--;}

@@ -435,3 +435,11 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,t
  .desk-mode-card{min-height:0;}
  .db-args li{flex-direction:column;}
 }
+
+/* 观点桌面结合用户的情况；我的结论收录观点桌面的结果 */
+.desk-ctx{padding:2px 10px;border-radius:999px;background:#EEF5FF;color:var(--a);font-size:12px;}
+.desk-ctx-empty{font-size:12px;}
+.summary-desk{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0;}
+.summary-desk dt{font-size:12px;font-weight:650;color:var(--ink-3);}
+.summary-desk dd{margin:0;font-size:14px;line-height:1.7;}
+@media(max-width:760px){.summary-desk{grid-template-columns:1fr;gap:2px;}.summary-desk dd{margin-bottom:8px;}}

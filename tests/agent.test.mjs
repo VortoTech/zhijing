@@ -240,3 +240,15 @@ test('哪边更贴近你：提醒里模型自带的「但」去掉，页面已�
   const out=verifyAdvice({fit:{option:A,reason:'你家里能兜底，对上了这一边的理由',caveat:'但材料也说，已有好 offer 时直接工作更划算'}},catalog);
   assert.equal(out.fit.caveat,'材料也说，已有好 offer 时直接工作更划算');
 });
+
+test('观点桌面结合用户的情况：圆桌和辩论都把看两边确认过的条件和情况带给模型',async()=>{
+  const input={question:'q',selections:[{fork:0,branch:1},{fork:9,branch:0}],facts:[{key:'finance',value:'要自己付房租'}],history:[],message:''};
+  let seenRt=null,seenDb=null;
+  await roundtableTurn({...input,roles:[{id:'realist'},{id:'sharp'}]},dataset,env,{chat:async({user})=>{seenRt=user;return {turns:[{role:'r1',text:'先算房租'}],divergence:''};}});
+  await debateTurn({...input,side:0},dataset,env,{chat:async({user})=>{seenDb=user;return {rebuttal:'你要自己付房租，波动扛得住吗'};}});
+  for(const seen of [seenRt,seenDb]){
+    assert.equal(seen.user_situation.length,2,'不存在的条件编号忽略');
+    assert.match(seen.user_situation[0],/经济压力大需稳定收入/);
+    assert.equal(seen.user_situation[1],'经济状况：要自己付房租');
+  }
+});
