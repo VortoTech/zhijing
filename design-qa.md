@@ -6,10 +6,10 @@ final result: passed
 
 ## 视觉依据与证据
 
-- 首页源图：/var/folders/w0/h7xmgp7x4rz2j1knh_hg7l2c0000gn/T/codex-clipboard-122e21fc-efe7-4951-9774-e16e2d9316c4.png
-- 圆桌源图：/var/folders/w0/h7xmgp7x4rz2j1knh_hg7l2c0000gn/T/codex-clipboard-a10c5bb7-d091-401d-8680-b39f390d492b.png
+- 首页源图：用户确认的“聚焦搜索”设计板（1586×992）。
+- 圆桌源图：用户确认的“轻盈圆桌”设计板（1586×992）。
 - 浏览器：Codex In-app Browser；实际程序 http://127.0.0.1:57409/。
-- 实现截图目录：/Users/rabymao820/Documents/Codex/2026-09-14/bang/outputs/ui-implementation
+- 可随仓库查看的实现截图：[docs/ui-preview](docs/ui-preview)。联合比较图保留在本地交付包中。
 - 首页：home-desktop.png（1280×900）、home-mobile.png（390×844）。
 - 圆桌：table-desktop.png（1280×900）、table-mobile.png（390×844）、table-tablet.png（900×1000）。
 - 原帖：source-mobile.png（390×844，正文滚动到被引用句，原有自动定位行为）。
@@ -53,7 +53,7 @@ final result: passed
 - 模拟找同路人确实调用/api/peers，并带确认过的情况，正确呈现无结果状态。
 - 模拟退出第一次失败时保留账号；第二次成功后隐藏个人材料并显示登录入口。
 - 中/EN切换、390px与320px宽度、900px平板与1280px网页；控制台无未处理JS错误。
-- node --test tests/*.test.mjs：186项，179通过、0失败、7跳过（仓库不含data/raw原始探针数据）。语法检查与git diff --check通过。
+- node --test tests/*.test.mjs：合并主分支后193项，186通过、0失败、7跳过（仓库不含data/raw原始探针数据）。语法检查与git diff --check通过。
 - 本轮浏览器操作使用In-app Browser。原有scripts/browser-regressions.mjs同步新增我的知乎导航选择，但未通过独立Playwright浏览器重复运行；对应关键流程通过上述内置浏览器模拟账号验证。
 
 ## 已知验证边界
@@ -64,4 +64,4 @@ final result: passed
 
 - 保留全部原有业务处理与入口，并延续同一视觉样式。
 - 本地预览保持运行。
-- 未提交commit、未推送分支、未创建或更新PR、未部署。HEAD仍为9ff2eec。
+- 上述视觉验收完成时尚未提交。随后用户授权独立 PR；最新交付状态见 [交接文档](docs/handoff-2026-09-14.md)。生产环境未部署。
