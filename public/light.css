@@ -397,3 +397,41 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,t
 }
 /* 手机上右下角的「问知镜」按钮会盖住整行宽的发送按钮：发送按钮靠左。 */
 @media(max-width:760px){.db-form .btn{align-self:flex-start;min-width:132px;}}
+
+/* ── 观点桌面入口：先选玩法（辩论场 / 圆桌八方），选了之后顶部一行面包屑可「换个玩法」 ── */
+.desk-entry{display:flex;flex-direction:column;gap:18px;}
+.desk-mode-cards{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.desk-mode-card{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-height:118px;padding:20px 22px;border:1px solid var(--line-2);border-radius:16px;background:#fff;color:var(--ink);text-align:left;font:inherit;cursor:pointer;box-shadow:0 6px 18px -14px #1A457A;}
+.desk-mode-card strong{font-size:20px;}
+.desk-mode-card span{font-size:13px;color:var(--ink-2);}
+.desk-mode-card.debate{border-color:#F3D0BA;background:linear-gradient(180deg,#FFF8F2,#fff);}
+.desk-mode-card.roundtable{border-color:#C9DBF7;background:linear-gradient(180deg,#F1F6FF,#fff);}
+.desk-mode-card:hover:not(:disabled){border-color:var(--a);}
+.desk-mode-card:disabled{opacity:.55;cursor:default;}
+.desk-mode-go{position:absolute;top:18px;right:18px;font-size:20px;color:var(--a);}
+.desk-crumb{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px;padding-bottom:10px;border-bottom:1px solid var(--line);}
+.desk-crumb strong{font-size:18px;}
+.desk-crumb .note{margin:0;font-size:12px;}
+.desk-step{margin:0;font-size:14px;font-weight:650;color:var(--ink);}
+.db-side-cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+.db-side-card{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:16px 18px;border:1px solid #C9DBF7;border-radius:14px;background:#F4F8FF;color:var(--ink);text-align:left;font:inherit;cursor:pointer;}
+.db-side-card.b{border-color:#F3D0BA;background:#FFF8F2;}
+.db-side-card strong{font-size:16px;}
+.db-side-card .note{margin:0;font-size:12px;}
+.db-side-card:hover:not(:disabled){border-color:var(--a);}
+.db-args{display:grid;gap:10px;margin:0;padding:0;list-style:none;}
+.db-args li{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:#fff;}
+.db-arg{flex:1;min-width:0;}
+.db-arg strong{font-size:14px;}
+.db-args .btn{flex:none;}
+/* 看两边右侧顾问：哪一边的理由更贴近你 */
+.bot-fit{margin:6px 0;padding:10px 12px;border:1px solid #CFE0FA;border-radius:12px;background:#EEF5FF;}
+.bot-fit .bot-k{margin:0 0 4px;color:var(--a);font-weight:650;}
+.bot-fit p{margin:0 0 4px;}
+.fit-note{font-size:11px;}
+.summary-fit{padding:14px 16px;border-radius:12px;background:#EEF5FF;}
+@media(max-width:760px){
+ .desk-mode-cards,.db-side-cards{grid-template-columns:1fr;}
+ .desk-mode-card{min-height:0;}
+ .db-args li{flex-direction:column;}
+}

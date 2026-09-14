@@ -60,10 +60,12 @@ const ADVISOR_PROMPT=[
   '8. next_question 只问一个最能减少不确定性的问题，options 给 2-4 个短选项（每个不超过 12 字），用户可以直接点。',
   '9. 这是聊天：所有文字都直接对用户说话，用「你」称呼他，不要写「用户」；口吻像当面聊，简短、具体。',
   '10. 编号（e1、p2 这类）只写进 evidence、counterpoints 字段，任何给用户看的文字里都不要出现编号；提到某句原话时，直接说它讲了什么。',
+  '11. fit：根据用户说过、确认过的情况（user_selected、user_facts 和他这次说的话），判断两边原话里哪一边的理由和他的处境更贴近、对他更有参考价值。option 写那一边的选项名；情况还太少或两边一样贴近，option 写 "none"。reason 说清他的哪几条情况对上了那一边的哪些理由（不超过 60 字）；caveat 写另一边仍值得他留意的一点（不超过 40 字）；evidence 写支撑的原话编号。这是告诉他「哪边的理由更适用于你」，不是替他做决定，不要写「你应该选」。',
   '',
   '只输出 JSON：{"understanding":"一两句复述用户的处境和真正要决定的事，不超过 80 字",',
   '"points":[{"text":"关键判断，不超过 50 字","evidence":["e3","p1"]}],',
   '"counterpoints":["p1"],"assumptions":["这些判断依赖的前提，不超过 30 字"],"gaps":["材料回答不了的问题，不超过 30 字"],',
+  '"fit":{"option":"选项名或 none","reason":"不超过 60 字","caveat":"不超过 40 字","evidence":["e2"]},',
   '"advice":{"text":"可撤回的下一步，不超过 100 字","facts":["finance"],"evidence":["e5"]},',
   '"next_question":{"text":"不超过 30 字","options":["选项一","选项二"]},',
   '"fact_proposals":[{"key":"finance","value":"家里能兜底","quote":"家里条件还可以"}],"search":""}',
@@ -166,8 +168,14 @@ export function verifyAdvice(parsed,catalog,{message='',facts=[]}={}){
     proposals.push({key,label:FACT_KEYS[key],value,quote});
     if(proposals.length>=3)break;
   }
+  // 哪一边的理由更贴近用户的处境：只能是两个选项之一（说不清就不点名）；没写理由就整个不显示。
+  // 这是「哪边的理由更适用于你」，所以不走 LEANS 拦截，但胜率、「你应该选」照样拦（clean 里的 BANNED）。
+  const fitReason=clean(parsed?.fit?.reason,90);
+  const fitOption=typeof parsed?.fit?.option==='string'&&(catalog.options||[]).includes(parsed.fit.option.trim())?parsed.fit.option.trim():null;
+  const fit=fitReason?{option:fitOption,reason:fitReason,caveat:clean(parsed?.fit?.caveat,60)||'',refs:ids(parsed.fit.evidence,null,2)}:null;
   return {
     understanding:clean(parsed?.understanding,120)||'',
+    fit,
     points,
     counterpoints:ids(parsed?.counterpoints,'pushback',3),
     assumptions:texts(parsed?.assumptions,40),
@@ -194,7 +202,8 @@ function present(out,catalog){
     assumptions:out.assumptions,gaps:out.gaps,
     advice:out.advice&&{...out.advice,facts:out.advice.facts.map(key=>({key,label:FACT_KEYS[key]})),refs:out.advice.refs.map(resolve)},
     nextQuestion:out.nextQuestion,
-    factProposals:out.factProposals
+    factProposals:out.factProposals,
+    fit:out.fit&&{...out.fit,refs:out.fit.refs.map(resolve)}
   };
 }
 

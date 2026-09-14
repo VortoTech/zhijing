@@ -219,3 +219,18 @@ test('辩论场：没有反驳就不算一轮；知镜站用户对面，带原�
   assert.equal(out.refs[0].ref,'pushback');
   assert.deepEqual(out.side,{user:comparison.options[0],agent:comparison.options[1]});
 });
+
+test('哪边的理由更贴近你：只能点名两个选项之一；没理由不显示；「你应该选」照样拦；原话按编号取回',async()=>{
+  const [A]=comparison.options;
+  const ok=verifyAdvice({fit:{option:A,reason:'你家里能兜底，对上了这一边「波动能承受」的理由（e2）',caveat:'另一边的培训体系对新人更友好',evidence:[idOf('如果没有经济压力'),'e999']}},catalog);
+  assert.equal(ok.fit.option,A);
+  assert.equal(ok.fit.reason,'你家里能兜底，对上了这一边「波动能承受」的理由');
+  assert.equal(ok.fit.refs.length,1,'不存在的编号丢掉');
+  assert.equal(verifyAdvice({fit:{option:'none',reason:'你说的情况还太少，两边都说得通'}},catalog).fit.option,null,'none 不点名');
+  assert.equal(verifyAdvice({fit:{option:'第三条路',reason:'理由'}},catalog).fit.option,null,'只能是两个选项之一');
+  assert.equal(verifyAdvice({fit:{option:A,reason:'所以你应该选这一边'}},catalog).fit,null);
+  assert.equal(verifyAdvice({fit:{option:A}},catalog).fit,null,'没写理由不显示');
+  const out=await adviseTurn({question:'q',message:''},dataset,env,{chat:async()=>({understanding:'u',points:[],fit:{option:A,reason:'你要自己付房租，对上了这一边的理由',caveat:'',evidence:[idOf('如果没有经济压力')]}})});
+  assert.equal(out.fit.refs[0].ref,'evidence');
+  assert.ok(out.fit.refs[0].text);
+});
