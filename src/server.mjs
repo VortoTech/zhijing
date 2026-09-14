@@ -3,14 +3,15 @@ import {randomUUID} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {fileURLToPath} from 'node:url';
 import {loadTopics,findTopic,topicSummary,liveTopicEnabled} from './topics.mjs';
-import {configuration} from './pipeline/fetch.mjs';
-import {fetchTopic} from './pipeline/fetch.mjs';
+import {configuration,fetchTopic,searchOne} from './pipeline/fetch.mjs';
 import {classify} from './pipeline/classify.mjs';
 import {buildReadingMap,ORDERS} from './engine.mjs';
 import {normalizeQuestion,planQuestion,askTopic,widenFocus} from './ask.mjs';
 import {extractComparison} from './pipeline/compare.mjs';
 import {createOAuth,parseCookies} from './oauth.mjs';
 import {fetchCollections,fetchContents,runCheckup,verifyUserApis} from './userdata.mjs';
+import {createStore} from './store.mjs';
+import {adviseTurn,inferProfile,FACT_KEYS} from './agent.mjs';
 
 const root=new URL('../',import.meta.url);
 const topics=await loadTopics();
@@ -18,6 +19,7 @@ const topics=await loadTopics();
 const FILES={
   '/':['public/index.html','text/html; charset=utf-8'],
   '/app.js':['public/app.js','text/javascript; charset=utf-8'],
+  '/advisor.js':['public/advisor.js','text/javascript; charset=utf-8'],
   '/engine.js':['src/engine.mjs','text/javascript; charset=utf-8'],
   '/session.js':['public/session.js','text/javascript; charset=utf-8'],
   '/style.css':['public/style.css','text/css; charset=utf-8']
@@ -25,13 +27,14 @@ const FILES={
 
 const CSP="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://*.zhimg.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 const DEFAULT_LIVE_DAILY_LIMIT=200;
+const DEFAULT_ADVICE_DAILY_LIMIT=600;
 const PARTIAL_TTL_MS=3*60*1000;
 const QUOTA_MESSAGE='今天的实时检索次数已用完，北京时间 0 点恢复。可以先看看示例。';
 
 // 每次真正触发检索与模型的实时请求计一次，按北京时间自然日清零；缓存命中不计。
-function dailyBudget(raw){
+function dailyBudget(raw,fallback=DEFAULT_LIVE_DAILY_LIMIT){
   const parsed=Number.parseInt(raw,10);
-  const limit=parsed>0?parsed:DEFAULT_LIVE_DAILY_LIMIT;
+  const limit=parsed>0?parsed:fallback;
   let day='',used=0;
   return {take(){
     const today=new Date(Date.now()+8*3600*1000).toISOString().slice(0,10);
@@ -46,11 +49,11 @@ function send(res,status,value){
   res.end(JSON.stringify(value));
 }
 
-async function readBody(req){
+async function readBody(req,max=8192){
   let text='';
   for await(const chunk of req){
     text+=chunk;
-    if(Buffer.byteLength(text)>8192)throw new Error('请求过大');
+    if(Buffer.byteLength(text)>max)throw new Error('请求过大');
   }
   return JSON.parse(text);
 }
@@ -107,6 +110,32 @@ function validateAsk(input){
 function askReady(env){
   return configuration(env).liveReady&&env.ZHIJING_ENABLE_PILOT==='1';
 }
+// 决策陪伴只需要模型；有知乎凭据时还能补充检索。
+function adviceReady(env){
+  return configuration(env).modelReady&&env.ZHIJING_ENABLE_PILOT==='1';
+}
+
+function validateAdvice(input){
+  if(!input||typeof input!=='object'||Array.isArray(input))throw new Error('请求格式不正确');
+  const ref=input.ref;
+  let view;
+  if(ref?.kind==='sample'&&typeof ref.topicId==='string'&&ref.topicId.length<=40)view={kind:'sample',topicId:ref.topicId};
+  else if(ref?.kind==='ask')view={kind:'ask',question:normalizeQuestion(ref.question)};
+  else throw new Error('缺少问题');
+  const selections=(Array.isArray(input.selections)?input.selections:[]).slice(0,6)
+    .filter(s=>Number.isInteger(s?.fork)&&s.fork>=0&&s.fork<10&&(s.branch===0||s.branch===1))
+    .map(({fork,branch})=>({fork,branch}));
+  const facts=(Array.isArray(input.facts)?input.facts:[]).slice(0,12)
+    .map(f=>({key:f?.key,value:typeof f?.value==='string'?f.value.trim():''}))
+    .filter(f=>Object.hasOwn(FACT_KEYS,f.key)&&f.value&&f.value.length<=40);
+  const history=(Array.isArray(input.history)?input.history:[]).slice(-6)
+    .map(h=>({role:h?.role==='assistant'?'assistant':'user',text:typeof h?.text==='string'?h.text.trim().slice(0,400):''}))
+    .filter(h=>h.text);
+  const message=typeof input.message==='string'?input.message.trim():'';
+  if(message.length>300)throw new Error('一次说的话请控制在 300 字以内。');
+  return {view,selections,facts,history,message};
+}
+const sameOrigin=req=>!req.headers.origin||new URL(req.headers.origin).host===req.headers.host;
 
 function incompleteCount(dataset){
   return dataset.records.filter(r=>['failed','partial'].includes(r.analysis?.status)).length;
@@ -115,7 +144,11 @@ function incompleteCount(dataset){
 export function createServer(env=process.env,dependencies={fetchTopic,classify}){
   const plan=dependencies.planQuestion||planQuestion;
   const extract=dependencies.extractComparison||extractComparison;
-  const oauth=dependencies.oauth||createOAuth(env);
+  const store=dependencies.store||createStore(env);
+  const oauth=dependencies.oauth||createOAuth(env,{store});
+  const advise=dependencies.advise||adviseTurn;
+  const infer=dependencies.inferProfile||inferProfile;
+  const searchAgent=dependencies.search||searchOne;
   const readCollections=dependencies.fetchCollections||fetchCollections;
   const readContents=dependencies.fetchContents||fetchContents;
   const checkup=dependencies.runCheckup||runCheckup;
@@ -125,6 +158,8 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
   let inFlight=0;
   const datasets=new Map();
   const liveBudget=dailyBudget(env.ZHIJING_LIVE_DAILY_LIMIT);
+  const adviceBudget=dailyBudget(env.ZHIJING_ADVICE_DAILY_LIMIT,DEFAULT_ADVICE_DAILY_LIMIT);
+  setInterval(()=>store.sweep().catch(()=>{}),3600*1000).unref();
 
   async function cached(key,{refresh=false,live=false},produce){
     const hit=datasets.get(key);
@@ -171,11 +206,145 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
         dependencies.classify(fetched.records,topic,env),
         extract(fetched.records,topic,env)
       ]);
-      return {topic,records,comparison,meta:{...fetched.meta,mode:'live',question,sessionKey:`ask:${question}`,planned:planned.planned,provenance:{
+      const dataset={topic,records,comparison,meta:{...fetched.meta,mode:'live',question,sessionKey:`ask:${question}`,planned:planned.planned,provenance:{
         text:'知乎本次检索原文；最多取每条内容的 3 条精选评论。',
         objections:'模型归类并校验引用来源。引用存在不代表异议关系或内容已被验证。'
       }}};
+      // 存一份：15 分钟缓存过期后，决策陪伴仍能按编号取回原话。
+      store.saveResult(`ask:${question}`,dataset).catch(()=>log(JSON.stringify({event:'store_failed',op:'saveResult'})));
+      return dataset;
     });
+  }
+
+  // 决策陪伴要用的材料：示例样本、保存的示例、刚检索过的结果（内存或数据库）。不会为此发起新的检索。
+  async function resolveDataset(view){
+    if(view.kind==='sample'){
+      let topic;
+      try{topic=findTopic(topics,view.topicId);}catch{return null;}
+      try{return {question:topic.title,dataset:await getDataset(topic,'snapshot')};}catch{return null;}
+    }
+    const saved=await loadSavedExample(view.question);
+    if(saved)return {question:view.question,dataset:saved};
+    const hit=datasets.get(`ask:${view.question}`);
+    if(hit){try{return {question:view.question,dataset:await hit.pending};}catch{}}
+    try{
+      const stored=await store.loadResult(`ask:${view.question}`);
+      return stored?{question:view.question,dataset:stored}:null;
+    }catch{return null;}
+  }
+
+  async function handleAdvice(req,res,cookies){
+    let input;
+    try{input=validateAdvice(await readBody(req,16384));}
+    catch(error){return send(res,400,{error:error.message||'输入无效'});}
+    if(!adviceReady(env))return send(res,503,{error:'决策陪伴暂未开放。'});
+    const found=await resolveDataset(input.view);
+    if(!found)return send(res,410,{expired:true,error:'这次检索的结果已经过期，重新检索后再问知镜。'});
+    if(found.dataset.comparison?.status!=='complete')return send(res,422,{error:'这个问题没有整理出两边的对比，知镜没法结合原话帮你梳理。'});
+    // 打开了「记住我的情况」的登录用户，以数据库里确认过的情况为准；其余用户用页面上当次填写的情况。
+    const user=oauth.available?await oauth.current(cookies):null;
+    let facts=input.facts,personalized=false;
+    if(user?.userId){
+      const account=await store.getUser(user.userId).catch(()=>null);
+      if(account?.personalize){
+        facts=(await store.listFacts(user.userId)).filter(f=>f.status==='confirmed').slice(0,12).map(({key,value})=>({key,value}));
+        personalized=true;
+      }
+    }
+    if(inFlight>=4)return send(res,429,{error:'当前请求较多，请稍后再试。'});
+    if(!adviceBudget.take())return send(res,429,{error:'今天的决策陪伴次数已用完，北京时间 0 点恢复。'});
+    inFlight++;
+    const started=Date.now();
+    try{
+      // 补充检索和实时检索共用每日次数。
+      const search=configuration(env).zhihuReady?async query=>{
+        if(!liveBudget.take())throw Object.assign(new Error('今日实时检索次数已用完'),{quota:true});
+        return searchAgent(query,env);
+      }:null;
+      const result=await advise({question:found.question,selections:input.selections,facts,history:input.history,message:input.message},found.dataset,env,{search});
+      if(personalized){
+        store.saveDecision(user.userId,{question:found.question,selections:result.selected.map(({label,when,lean})=>({label,when,lean})),note:result.advice?.text||''})
+          .catch(()=>log(JSON.stringify({event:'store_failed',op:'saveDecision'})));
+      }
+      // 日志不记录用户的话、情况和原话。
+      log(JSON.stringify({event:'advice',durationMs:Date.now()-started,points:result.points.length,
+        speculative:result.points.filter(p=>p.basis==='speculation').length,counterpoints:result.counterpoints.length,
+        proposals:result.factProposals.length,searched:!!result.search,found:result.search?.found?.length??0,dropped:result.dropped??0,facts:facts.length,personalized}));
+      const {dropped,...body}=result;
+      return send(res,200,{...body,personalized,factsUsed:facts.length});
+    }catch(error){
+      log(JSON.stringify({event:'advice_failed',durationMs:Date.now()-started,reason:error.reason||'upstream'}));
+      return send(res,503,{error:'知镜这次没能想完，请稍后再试。'});
+    }finally{inFlight--;}
+  }
+
+  // 「我的情况」：只对读到了知乎资料的登录用户开放；打开「记住我的情况」后才写入数据库。
+  async function handleProfile(req,res,url,cookies){
+    if(req.method!=='GET'&&!sameOrigin(req))return send(res,403,{error:'请求来源不匹配'});
+    if(req.method==='POST'&&!req.headers['content-type']?.startsWith('application/json'))return send(res,415,{error:'请发送 JSON 请求'});
+    const user=oauth.available?await oauth.current(cookies):null;
+    if(!user)return send(res,401,{error:'请先用知乎登录。'});
+    if(!user.userId)return send(res,409,{error:'没读到你的知乎资料，暂时不能保存你的情况。'});
+    const id=user.userId;
+    const snapshot=async()=>{
+      const account=await store.getUser(id);
+      const on=!!account?.personalize;
+      return {personalize:on,consentAt:account?.consentAt||null,facts:on?await store.listFacts(id):[],decisions:on?await store.listDecisions(id):[]};
+    };
+    try{
+      if(req.method==='GET'&&url.pathname==='/api/profile')return send(res,200,await snapshot());
+      if(req.method==='DELETE'&&url.pathname==='/api/profile'){
+        await store.deleteUser(id);
+        log(JSON.stringify({event:'profile_deleted'}));
+        res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Set-Cookie':await oauth.end(cookies)});
+        return res.end('{"ok":true}');
+      }
+      if(req.method==='POST'&&url.pathname==='/api/profile/personalize'){
+        const on=(await readBody(req))?.on===true;
+        await store.setPersonalize(id,on);
+        log(JSON.stringify({event:'personalize',on}));
+        return send(res,200,await snapshot());
+      }
+      if(req.method==='POST'&&url.pathname==='/api/profile/facts'){
+        const body=await readBody(req);
+        if(!(await store.getUser(id))?.personalize)return send(res,409,{error:'先打开「记住我的情况」。'});
+        if(body?.action==='add'){
+          const key=Object.hasOwn(FACT_KEYS,body.key)?body.key:null;
+          const value=typeof body.value==='string'?body.value.trim():'';
+          if(!key||!value||value.length>40)return send(res,400,{error:'情况请写 1–40 个字。'});
+          await store.addFact(id,{key,value,source:'declared',status:'confirmed',evidenceRef:typeof body.evidenceRef==='string'?body.evidenceRef.slice(0,200):''});
+        }else if(body?.action==='confirm'){
+          if(!await store.confirmFact(id,String(body.id)))return send(res,404,{error:'这条情况不存在或已过期。'});
+        }else if(body?.action==='delete'){
+          await store.deleteFact(id,String(body.id));
+        }else return send(res,400,{error:'不支持的操作'});
+        return send(res,200,await snapshot());
+      }
+      if(req.method==='POST'&&url.pathname==='/api/profile/infer'){
+        const token=oauth.accessToken(cookies);
+        if(!token)return send(res,401,{error:'知乎授权已过期（有效期 1 小时），重新登录后才能读取收藏。',relogin:true});
+        if(!adviceReady(env)||!configuration(env).zhihuReady)return send(res,503,{error:'暂时不能读取收藏。'});
+        if(!adviceBudget.take())return send(res,429,{error:'今天的次数已用完，北京时间 0 点恢复。'});
+        let items;
+        try{items=await readCollections(env,token);}
+        catch(error){
+          if(error.reason==='auth'){oauth.dropToken(cookies);return send(res,401,{error:'知乎授权已失效，请重新登录。',relogin:true});}
+          return send(res,503,{error:'暂时读不到你的收藏，请稍后再试。'});
+        }
+        let proposals;
+        try{proposals=await infer(items,env);}
+        catch{return send(res,503,{error:'这次没能推测出来，请稍后再试。'});}
+        const on=!!(await store.getUser(id))?.personalize;
+        if(on)for(const p of proposals)await store.addFact(id,{key:p.key,value:p.value,source:'inferred',status:'pending',evidenceRef:p.evidenceRef}).catch(()=>{});
+        log(JSON.stringify({event:'infer',collections:items.length,proposals:proposals.length,saved:on}));
+        return send(res,200,{proposals,...await snapshot()});
+      }
+      return send(res,404,{error:'未找到页面'});
+    }catch(error){
+      if(error.reason==='limit')return send(res,409,{error:'记下的情况已经很多了，先删掉一些再加。'});
+      log(JSON.stringify({event:'profile_failed'}));
+      return send(res,503,{error:'暂时存不了，请稍后再试。'});
+    }
   }
 
   async function handleAsk(req,res){
@@ -239,14 +408,14 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
         return res.end();
       }
       if(req.method==='GET'&&url.pathname==='/api/me'){
-        const user=oauth.available?oauth.current(parseCookies(req.headers.cookie)):null;
-        return send(res,200,{available:oauth.available,user:user?{name:user.name,headline:user.headline,avatar:user.avatar}:null});
+        const user=oauth.available?await oauth.current(parseCookies(req.headers.cookie)):null;
+        return send(res,200,{available:oauth.available,user:user?{name:user.name,headline:user.headline,avatar:user.avatar,canRemember:!!user.userId}:null});
       }
       // ── 登录用户的收藏：读取（从收藏里挑问题）与体检（评论区有没有人当场不同意） ──
       if((req.method==='GET'&&['/api/my/collections','/api/my/verify'].includes(url.pathname))||(req.method==='POST'&&url.pathname==='/api/my/checkup')){
         if(req.method==='POST'&&req.headers.origin&&new URL(req.headers.origin).host!==req.headers.host)return send(res,403,{error:'请求来源不匹配'});
         const cookies=parseCookies(req.headers.cookie);
-        const user=oauth.available?oauth.current(cookies):null;
+        const user=oauth.available?await oauth.current(cookies):null;
         if(!user)return send(res,401,{error:'请先用知乎登录。'});
         const token=oauth.accessToken(cookies);
         if(!token)return send(res,401,{error:'知乎授权已过期（有效期 1 小时），重新登录后才能读取收藏。',relogin:true});
@@ -298,9 +467,17 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
           return error.reason==='auth'?authFailed():send(res,503,{error:'收藏体检暂时不可用，请稍后再试。'});
         }finally{inFlight--;}
       }
+      if(url.pathname==='/api/profile'||url.pathname.startsWith('/api/profile/')){
+        return await handleProfile(req,res,url,parseCookies(req.headers.cookie));
+      }
+      if(req.method==='POST'&&url.pathname==='/api/advice'){
+        if(!sameOrigin(req))return send(res,403,{error:'请求来源不匹配'});
+        if(!req.headers['content-type']?.startsWith('application/json'))return send(res,415,{error:'请发送 JSON 请求'});
+        return await handleAdvice(req,res,parseCookies(req.headers.cookie));
+      }
       if(req.method==='POST'&&url.pathname==='/auth/logout'){
         if(req.headers.origin&&new URL(req.headers.origin).host!==req.headers.host)return send(res,403,{error:'请求来源不匹配'});
-        res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Set-Cookie':oauth.end(parseCookies(req.headers.cookie))});
+        res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Set-Cookie':await oauth.end(parseCookies(req.headers.cookie))});
         return res.end('{"ok":true}');
       }
       if(req.method==='GET'&&url.pathname==='/api/config'){
@@ -308,6 +485,7 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
         return send(res,200,{
           liveReady:config.liveReady&&topics.some(t=>liveTopicEnabled(t,env)),
           askReady:askReady(env),
+          adviceReady:adviceReady(env),
           pilotEnabled:env.ZHIJING_ENABLE_PILOT==='1',
           zhihuReady:config.zhihuReady,
           modelReady:config.modelReady,
@@ -384,8 +562,11 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
 if(process.argv[1]===fileURLToPath(import.meta.url)){
   const port=Number(process.env.PORT||4318);
   const host=process.env.HOST||'127.0.0.1';
-  createServer().listen(port,host,()=>{
+  const store=createStore(process.env);
+  store.init().then(()=>console.log(`用户信息存储：${store.kind==='postgres'?'PostgreSQL 已连接':'内存（未配置 DATABASE_URL，重启即清空）'}`))
+    .catch(error=>console.error('数据库连接失败：'+String(error.message).slice(0,200)));
+  createServer(process.env,{fetchTopic,classify,store}).listen(port,host,()=>{
     const config=configuration();
-    console.log(`知镜已启动 http://${host}:${port} · 话题 ${topics.length} 个 · 精选样本可用 · 实时模式${config.liveReady?'已配置':'未配置'} · 自由提问${askReady(process.env)?'已开放':'未开放'}`);
+    console.log(`知镜已启动 http://${host}:${port} · 话题 ${topics.length} 个 · 精选样本可用 · 实时模式${config.liveReady?'已配置':'未配置'} · 自由提问${askReady(process.env)?'已开放':'未开放'} · 决策陪伴${adviceReady(process.env)?'已开放':'未开放'}`);
   });
 }

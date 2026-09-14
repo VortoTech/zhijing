@@ -55,7 +55,7 @@ test('回调：正确 state 登录成功；重复、缺失、其他浏览器、�
   const body=new URLSearchParams(zhihu.calls[0].options.body);
   assert.deepEqual(Object.fromEntries(body),{app_id:'app-1',app_key:'key-secret-xyz',grant_type:'authorization_code',redirect_uri:env.ZHIHU_OAUTH_REDIRECT_URI,code:'c-1'});
   assert.equal(zhihu.calls[1].options.headers.authorization,'Bearer tok-abc');
-  assert.equal(oauth.current({zj_sid:cookieValue(cookies,'zj_sid')}).name,'测试用户');
+  assert.equal((await oauth.current({zj_sid:cookieValue(cookies,'zj_sid')})).name,'测试用户');
 
   await assert.rejects(oauth.complete(query(ok.state),{zj_login:ok.nonce}),e=>e.reason==='state');
   await assert.rejects(oauth.complete(query(null),{zj_login:ok.nonce}),e=>e.reason==='state');
@@ -82,7 +82,7 @@ test('会话里保留 token 最多 1 小时、只在服务端；过期后身份�
   const sid2=cookieValue(second,'zj_sid');
   clock+=3601*1000;
   assert.equal(oauth.accessToken({zj_sid:sid2}),null);
-  assert.equal(oauth.current({zj_sid:sid2}).name,'测试用户');
+  assert.equal((await oauth.current({zj_sid:sid2})).name,'测试用户');
 });
 
 test('换 token 失败不建立会话；读用户资料失败仍能登录（显示「知乎用户」），收藏功能不受影响',async()=>{
@@ -149,7 +149,7 @@ test('服务端全流程：登录 → 读取身份 → 退出；响应和日志�
     assert.equal(callback.headers.get('location'),'/?login=ok');
     const sid=cookieValue(callback.headers.getSetCookie(),'zj_sid');
     const me=await (await fetch(base+'/api/me',{headers:{cookie:`zj_sid=${sid}`}})).json();
-    assert.deepEqual(me,{available:true,user:{name:'测试用户',headline:'一句话',avatar:'https://picx.zhimg.com/a.jpg'}});
+    assert.deepEqual(me,{available:true,user:{name:'测试用户',headline:'一句话',avatar:'https://picx.zhimg.com/a.jpg',canRemember:true}});
 
     const replay=await fetch(`${base}/auth/callback?authorization_code=c-1&state=${state}`,{redirect:'manual',headers:{cookie:`zj_login=${nonce}`}});
     assert.equal(replay.headers.get('location'),'/?login=failed');

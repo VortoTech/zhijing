@@ -159,7 +159,7 @@ test('未知路径返回 404', async () => {
 });
 
 test('静态页与资源可访问，且带安全响应头', async () => {
-  for (const [path, type] of [['/', 'text/html'], ['/app.js', 'text/javascript'], ['/style.css', 'text/css']]) {
+  for (const [path, type] of [['/', 'text/html'], ['/app.js', 'text/javascript'], ['/advisor.js', 'text/javascript'], ['/style.css', 'text/css']]) {
     const res = await fetch(base + path);
     assert.equal(res.status, 200, path);
     assert.match(res.headers.get('content-type'), new RegExp(type));

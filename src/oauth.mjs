@@ -1,10 +1,11 @@
 import {randomBytes} from 'node:crypto';
+import {createMemoryStore} from './store.mjs';
 
 // 知乎登录（黑客松 OAuth）。协议见知乎 skill 包 references/hackathon-oauth.md 与 oauth.md：
 // 授权 → 回调带 authorization_code 与 state → 后端用 app_id/app_key 换 access_token → GET /user 读基础信息。
 // 安全：state 一次性、绑定浏览器、10 分钟过期；App Key 只在服务端；access_token 只存服务端内存、最多 1 小时，
-// 用来读该用户授权的收藏，从不发给浏览器；
-// 浏览器只持有随机会话号（HttpOnly Cookie）。
+// 用来读该用户授权的收藏，从不发给浏览器，也不入库；
+// 浏览器只持有随机会话号（HttpOnly Cookie），会话本身（昵称、头像、用户编号）存在 store 里，服务重启后仍然登录。
 const AUTHORIZE_URL='https://openapi.zhihu.com/authorize';
 const TOKEN_URL='https://openapi.zhihu.com/access_token';
 const USER_URL='https://openapi.zhihu.com/user';
@@ -62,15 +63,15 @@ export function parseUser(text){
 const randomToken=()=>randomBytes(24).toString('base64url');
 const fail=(reason,message)=>Object.assign(new Error(message),{reason});
 
-export function createOAuth(env=process.env,{request=fetch,now=Date.now}={}){
+export function createOAuth(env=process.env,{request=fetch,now=Date.now,store=createMemoryStore()}={}){
   const config=oauthConfig(env);
   const pending=new Map();   // state → {nonce, expires}
-  const sessions=new Map();  // 会话号 → {user, expires}
+  const tokens=new Map();    // 会话号 → {token, expires}：只在内存
 
   function sweep(){
     const t=now();
     for(const [key,value] of pending)if(value.expires<t)pending.delete(key);
-    for(const [key,value] of sessions)if(value.expires<t)sessions.delete(key);
+    for(const [key,value] of tokens)if(value.expires<t)tokens.delete(key);
   }
   // 文档写 /user 只带 OAuth token；官方 zhihu-hackathon skill 的示例带 Access Secret + X-OAuth-Token。两种都试，
   // 都失败也不阻断登录（官方说明：资料读取失败不得伪造字段，也不阻断其他用户接口）。
@@ -139,35 +140,35 @@ export function createOAuth(env=process.env,{request=fetch,now=Date.now}={}){
       const expiresIn=Number(tokenBody?.expires_in??tokenBody?.data?.expires_in)*1000;
       const tokenTtl=Math.min(expiresIn>0?expiresIn:TOKEN_TTL_MAX_MS,TOKEN_TTL_MAX_MS);
       sweep();
+      // 读不到资料（没有 uid / hash_id）的用户不建用户记录：能登录、能体检，但不能「记住我的情况」。
+      const userId=await store.upsertUser(user);
       const sid=randomToken();
-      sessions.set(sid,{user,token:accessToken,tokenExpires:now()+tokenTtl,expires:now()+SESSION_TTL_MS});
-      return {user,stateReturned:!!state,cookies:[cookie('zj_sid',sid,SESSION_TTL_MS/1000),cookie('zj_login','',0)]};
+      await store.createSession(sid,{userId,user,expiresAt:now()+SESSION_TTL_MS});
+      tokens.set(sid,{token:accessToken,expires:now()+tokenTtl});
+      return {user:{...user,userId},stateReturned:!!state,cookies:[cookie('zj_sid',sid,SESSION_TTL_MS/1000),cookie('zj_login','',0)]};
     },
 
-    current(cookies){
-      const session=cookies.zj_sid?sessions.get(cookies.zj_sid):null;
-      if(!session)return null;
-      if(session.expires<now()){sessions.delete(cookies.zj_sid);return null;}
-      return session.user;
+    async current(cookies){
+      const session=cookies.zj_sid?await store.getSession(cookies.zj_sid,now()):null;
+      return session?{...session.user,userId:session.userId}:null;
     },
 
     // 只在服务端使用；过期或被知乎拒绝后清空，不自动续期，也不回退到 Access Secret 本人身份。
     accessToken(cookies){
-      const session=cookies.zj_sid?sessions.get(cookies.zj_sid):null;
-      if(!session||session.expires<now()||!session.token||session.tokenExpires<now())return null;
-      return session.token;
+      const entry=cookies.zj_sid?tokens.get(cookies.zj_sid):null;
+      if(!entry||entry.expires<now())return null;
+      return entry.token;
     },
 
     dropToken(cookies){
-      const session=cookies.zj_sid?sessions.get(cookies.zj_sid):null;
-      if(session)session.token=null;
+      if(cookies.zj_sid)tokens.delete(cookies.zj_sid);
     },
 
-    end(cookies){
-      if(cookies.zj_sid)sessions.delete(cookies.zj_sid);
+    async end(cookies){
+      if(cookies.zj_sid){tokens.delete(cookies.zj_sid);await store.deleteSession(cookies.zj_sid).catch(()=>{});}
       return cookie('zj_sid','',0);
     },
 
-    stats(){return {sessions:sessions.size};}
+    stats(){return {sessions:tokens.size};}
   };
 }

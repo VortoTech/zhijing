@@ -1,5 +1,6 @@
 import {buildReadingMap,pushbackFor} from '/engine.js';
 import {createReadingSession} from '/session.js';
+import {buildGuidance} from '/advisor.js';
 
 // 示例问题都能秒开：第一个是人工标注的样本，其余是保存下来的实时结果（data/examples/）。
 const EXAMPLES=[
@@ -13,7 +14,13 @@ const isSaved=question=>EXAMPLES.some(e=>e.saved&&e.question===question);
 const MAX_FORKS=3;
 
 const session=createReadingSession();
-const state={config:null,view:null,filter:'flagged',showAllForks:false};
+// activeReason 为 undefined 表示还没决定：宽屏默认展开第一条被评论区反驳的理由。
+const state={config:null,view:null,filter:'flagged',showAllForks:false,selectedForks:{},activeReason:undefined,openSources:new Set(),advisor:{turns:[],pending:false,draft:''}};
+// 登录账号与「知镜记住的情况」；没登录或没打开记住时，情况只存在这一页（localFacts）。
+const account={available:false,user:null,profile:null};
+const localFacts=[];
+let localSeq=0,boardById=new Map();
+const NO_PB={of:()=>[]};
 let openCards=null,ticker=null;
 const $=id=>document.getElementById(id);
 function el(tag,props={},children=[]){
@@ -43,8 +50,9 @@ function viewFor(question){
 }
 
 function clearResults(){
-  for(const id of ['result-head','compare','sources-summary','sources-note','list','list-bar','diag-slot','source-note'])clear($(id));
+  for(const id of ['result-head','compare','advisor','sources-summary','sources-note','list','list-bar','diag-slot','source-note'])clear($(id));
   for(const id of ['sources','data-details']){$(id).hidden=true;$(id).open=false;}
+  $('advisor').hidden=true;
 }
 function setBusy(busy){
   $('ask-btn').disabled=busy;
@@ -86,7 +94,8 @@ function markExamples(){
 }
 
 async function load(view,refresh=false){
-  state.view=view;state.filter='flagged';state.showAllForks=false;
+  state.view=view;state.filter='flagged';state.showAllForks=false;state.selectedForks={};state.activeReason=undefined;
+  state.openSources=new Set();state.advisor={turns:[],pending:false,draft:''};
   $('q').value=view.question;$('ask-note').textContent='';
   syncUrl(view);markExamples();
   const live=view.kind==='ask';
@@ -259,11 +268,14 @@ function evidenceFigure(e,byId,pb){
       record?button('看原帖',open,{class:'link-btn'}):null,
       record?zhihuAnchor(record,e,'知乎 ↗'):null
     ]),
+    // 答主在同一回答里交代的适用范围：原话逐字正确，不代表放在这里的用法没有前提。
+    e.premise?.text?el('p',{class:'premise'},[el('span',{class:'premise-tag',text:'答主自己交代的前提'}),el('span',{text:e.premise.text})]):null,
     pushbackBlock(pb.of(e))
   ]);
 }
 function comparisonSections(block,records,sample){
   const byId=new Map(records.map(r=>[r.id,r]));
+  boardById=byId;
   const hasSides=block?.sides?.some(s=>s.reasons.length);
   if(block?.status!=='complete'||(!hasSides&&!block.forks.length)){
     const message=block?.status==='failed'?'这次没能整理出对比（模型请求失败）。'
@@ -276,7 +288,6 @@ function comparisonSections(block,records,sample){
   const [A,B]=block.options;
   const sideOf=option=>option===B?'b':'a';
   const pb=assignPushback(block,byId);
-  const wide=matchMedia('(min-width: 641px)').matches;
   const tag=option=>el('p',{class:'cell-tag '+sideOf(option),text:'选'+option});
 
   // 表头：两个选项，滚动时固定在顶部，下面每一格都按左右对应。
@@ -285,42 +296,93 @@ function comparisonSections(block,records,sample){
   ])))];
 
   if(hasSides){
-    // 宽屏默认展开第一条带评论区反驳的理由，让突出点不用点就能看到。
-    const firstPushed=wide?block.sides.flatMap(s=>s.reasons).find(r=>pushbackChip(r.evidence,pb)):null;
     const reasonsOf=option=>block.sides.find(s=>s.option===option)?.reasons||[];
+    const reasonKey=(option,index)=>option+'\u0000'+index;
+    // 宽屏默认展开第一条带评论区反驳的理由（通栏展示，不撑高单侧），让突出点不用点就能看到；手机上全部收起。
+    if(state.activeReason===undefined){
+      state.activeReason=null;
+      if(matchMedia('(min-width: 641px)').matches){
+        for(const option of [A,B]){
+          const index=reasonsOf(option).findIndex(r=>pushbackChip(r.evidence,pb));
+          if(index>=0){state.activeReason=reasonKey(option,index);break;}
+        }
+      }
+    }
+    const selected=state.activeReason?(()=>{
+      const [option,index]=state.activeReason.split('\u0000');
+      const reason=reasonsOf(option)[Number(index)];
+      return reason?{option,reason}:null;
+    })():null;
     parts.push(el('section',{class:'board-section','aria-labelledby':'sides-title'},[
       el('h3',{id:'sides-title',class:'board-label',text:'他们怎么说'}),
       el('div',{class:'board-row'},[A,B].map(option=>el('div',{class:'board-cell '+sideOf(option)},[
         tag(option),
         reasonsOf(option).length
-          ?el('ul',{class:'reasons'},reasonsOf(option).map(r=>el('li',{},[el('details',{class:'reason',open:r===firstPushed},[
-            el('summary',{},[el('span',{class:'reason-text',text:r.label}),pushbackChip(r.evidence,pb)]),
-            el('div',{class:'reason-body'},r.evidence.map(e=>evidenceFigure(e,byId,pb)))
-          ])])))
+          ?el('ul',{class:'reasons'},reasonsOf(option).map((r,index)=>el('li',{},[
+            button(r.label,()=>{state.activeReason=state.activeReason===reasonKey(option,index)?null:reasonKey(option,index);render();},{
+              class:'reason-button','aria-expanded':String(state.activeReason===reasonKey(option,index))
+            }),pushbackChip(r.evidence,pb)
+          ])))
           :el('p',{class:'note',text:'这一边没找到理由。'})
-      ])))
+      ]))),
+      selected?el('section',{class:'reason-focus','aria-live':'polite'},[
+        el('div',{class:'reason-focus-head'},[
+          el('div',{},[el('p',{class:'cell-tag '+sideOf(selected.option),text:'选'+selected.option}),el('h4',{text:selected.reason.label})]),
+          button('收起',()=>{state.activeReason=null;render();},{class:'link-btn'})
+        ]),
+        ...selected.reason.evidence.map(e=>evidenceFigure(e,byId,pb))
+      ]):null
     ]));
   }
 
   if(block.forks.length){
     const shown=state.showAllForks?block.forks:block.forks.slice(0,MAX_FORKS);
     const rest=block.forks.length-shown.length;
-    // 宽屏默认展开一个条件示范原话，优先挑评论区有人当场回应的那个；手机上全部收起。
-    const openIndex=Math.max(0,shown.findIndex(f=>f.branches.some(b=>pushbackChip(b.evidence,pb))));
+    const guidance=buildGuidance(block,state.selectedForks);
+    const selectBranch=(forkIndex,branchIndex)=>{
+      const next={...state.selectedForks};
+      if(next[forkIndex]===branchIndex)delete next[forkIndex];else next[forkIndex]=branchIndex;
+      state.selectedForks=next;
+      render();
+      document.querySelector(`[data-choice="${forkIndex}-${branchIndex}"]`)?.focus();
+    };
+    const canAsk=!!state.config?.adviceReady;
     parts.push(el('section',{class:'board-section','aria-labelledby':'forks-title'},[
-      el('h3',{id:'forks-title',class:'board-label',text:'你属于哪一边'}),
-      el('ol',{class:'forks'},shown.map((f,i)=>el('li',{},[el('details',{class:'fork',open:wide&&i===openIndex},[
-        el('summary',{},[
-          el('span',{class:'fork-q',text:f.label}),
-          el('span',{class:'fork-cells'},f.branches.map(b=>el('span',{class:'fork-cell '+sideOf(b.lean)},[
-            el('span',{class:'fork-when',text:b.when}),pushbackChip(b.evidence,pb)
-          ]))),
-          el('span',{class:'fork-toggle','aria-hidden':'true'})
-        ]),
-        el('div',{class:'board-row fork-evidence'},f.branches.map(b=>el('div',{class:'board-cell '+sideOf(b.lean)},[
-          tag(b.lean),...b.evidence.map(e=>evidenceFigure(e,byId,pb))
-        ])))
-      ])]))),
+      el('h3',{id:'forks-title',class:'board-label',text:'哪些情况更接近你'}),
+      el('div',{class:'guide '+guidance.state,role:'status'},[
+        el('h4',{text:guidance.title}),el('p',{text:guidance.message}),
+        guidance.groups.length?el('div',{class:'guide-groups'},guidance.groups.map(group=>el('span',{class:'guide-pick '+sideOf(group.option)},[
+          el('strong',{text:group.option+'：'}),group.matches.map(m=>m.when).join('、')
+        ]))):null,
+        guidance.picked.length&&canAsk?button('结合这些情况问知镜 ↓',()=>{
+          $('advisor').scrollIntoView({behavior:'smooth',block:'start'});
+          askAdvisor('结合我选的情况帮我梳理');
+        },{class:'btn small guide-cta',disabled:state.advisor.pending}):null
+      ]),
+      el('ol',{class:'forks'},shown.map((f,i)=>{
+        const picked=state.selectedForks[i];
+        const choice=(b,j)=>{
+          const node=el('button',{type:'button',class:'fork-choice '+sideOf(b.lean),'aria-pressed':String(picked===j),'data-choice':i+'-'+j},[
+            el('span',{text:b.when}),pushbackChip(b.evidence,pb)
+          ]);
+          node.addEventListener('click',()=>selectBranch(i,j));
+          return node;
+        };
+        // 两边的原话始终并排；选了哪边，就在哪边标出来，另一边照常展示。
+        const sources=el('details',{class:'fork-source',open:state.openSources.has(i)},[
+          el('summary',{text:picked==null?'看两边的原话':'看两边的原话（你选的那边已标出）'}),
+          el('div',{class:'board-row fork-evidence'},f.branches.map((b,j)=>el('div',{class:'board-cell '+sideOf(b.lean)+(picked===j?' picked':'')},[
+            el('p',{class:'cell-tag '+sideOf(b.lean),text:(picked===j?'你选的 · ':'')+b.when}),
+            ...b.evidence.map(e=>evidenceFigure(e,byId,pb))
+          ])))
+        ]);
+        sources.addEventListener('toggle',()=>{if(sources.open)state.openSources.add(i);else state.openSources.delete(i);});
+        return el('li',{class:'fork'},[
+          el('p',{class:'fork-q',id:'fork-q-'+i,text:f.label}),
+          el('div',{class:'fork-cells',role:'group','aria-labelledby':'fork-q-'+i},f.branches.map(choice)),
+          sources
+        ]);
+      })),
       rest>0?button('再看 '+rest+' 个条件',()=>{state.showAllForks=true;render();},{class:'more-forks'}):null
     ]));
   }
@@ -434,7 +496,8 @@ function render(){
   const meta=data.meta;
   $('source-note').replaceChildren(
     el('p',{text:'标题和分支说明由 AI 归纳，只帮你把两边摆清楚，不替你做决定。有人提出异议，不代表异议成立；没发现异议，也不代表回答适用于你。'}),
-    el('p',{text:'对比图由模型从赞数靠前的 24 条相关回答和它们的精选评论里整理：程序先把回答切句编号，模型只挑编号，页面按编号取原文，所以引号里的话一字未改。归纳本身可能不全或不准。'}),
+    el('p',{text:'对比图由模型从赞数靠前的 24 条相关回答和它们的精选评论里整理：程序先把回答切句编号，模型只挑编号，页面按编号取原文，所以引号里的话一字未改。归纳本身可能不全或不准。答主在同一回答里交代了适用前提的，前提句也按编号取出，标在原话下面。'}),
+    el('p',{text:'「结合你的情况」由模型只用这张对比图里的原话和你确认过的情况作答：判断后面的原话按编号取回，没有原话支持的标成「推测」；从你的话里听出的情况，要你点「记下」才会用。它不给胜率，也不替你选。'}),
     el('p',{text:'原话下面挂的读者反驳，来自同一条回答的精选评论，由'+(sample?'人工标注':'模型归类并复核投票')+'挑出，并展示评论原话供你判断。每条反驳全页只出现一次：标「针对这句话」的，是评论回应的原句与这句有重合；其余是针对整条回答，挂在这条回答第一次被引用的地方。有人反驳不代表反驳成立。'}),
     el('p',{text:sample?'评论区的反驳由人工标注，并校验引文来源。':'评论区的反驳由模型归类，并逐字校验引文来源。引文存在不代表归类一定正确。'}),
     el('p',{text:(meta.sourceNote||meta.description||'本次检索取得的有限样本。')+' '+(sample?'样本生成时间':'检索时间')+'：'+(meta.builtAt||meta.capturedAt||'未记录')+'。'}),
@@ -446,6 +509,313 @@ function render(){
     el('p',{text:'全部结果：'+d.total+' 条；取得评论：'+d.commentBearing+' 条；被反驳或补充前提：'+d.flagged+' 条；分析完成：'+d.analysisComplete+' 条；未完成：'+d.analysisIncomplete+' 条；无评论：'+d.noComments+' 条。'})
   );
   $('data-details').hidden=false;
+  renderAdvisor();
+}
+
+// ── 知镜记住的情况：只对读到知乎资料的登录用户开放；打开「记住」才写进数据库 ──
+const FACT_LABELS={stage:'当前阶段',finance:'经济状况',city:'城市与家庭',timeline:'时间窗口',risk:'风险承受',priority:'最看重',dealbreaker:'不能接受',other:'其他情况'};
+const personalized=()=>!!account.profile?.personalize;
+const allFacts=()=>personalized()?account.profile.facts:localFacts;
+const confirmedFacts=()=>allFacts().filter(f=>f.status==='confirmed');
+let factNote='',inferState={running:false,note:'',relogin:false},deleteArmed=false;
+
+async function profileCall(path,body,method='POST'){
+  const res=await fetch(path,{method,headers:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(60000)});
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok)throw Object.assign(new Error(data.error||'没能保存，请稍后再试。'),{relogin:!!data.relogin});
+  return data;
+}
+async function loadProfile(){
+  account.profile=null;
+  if(account.user?.canRemember){
+    try{account.profile=await profileCall('/api/profile',undefined,'GET');}catch{account.profile=null;}
+  }
+  renderAdvisor();renderMine();
+}
+async function factAction(run){
+  factNote='';
+  try{await run();}catch(error){factNote=error.message||'没能保存，请稍后再试。';}
+  renderAdvisor();renderMine();
+}
+const isLocal=fact=>String(fact.id).startsWith('l');
+function addFact(key,value,{source='declared',evidenceRef=''}={}){
+  return factAction(async()=>{
+    if(personalized())account.profile=await profileCall('/api/profile/facts',{action:'add',key,value,evidenceRef});
+    else if(!localFacts.some(f=>f.key===key&&f.value===value))localFacts.push({id:'l'+(++localSeq),key,value,source,status:'confirmed',evidenceRef});
+  });
+}
+function confirmFact(fact){
+  return factAction(async()=>{
+    if(personalized()&&!isLocal(fact))account.profile=await profileCall('/api/profile/facts',{action:'confirm',id:fact.id});
+    else fact.status='confirmed';
+  });
+}
+function removeFact(fact){
+  return factAction(async()=>{
+    if(personalized()&&!isLocal(fact))account.profile=await profileCall('/api/profile/facts',{action:'delete',id:fact.id});
+    else{const at=localFacts.indexOf(fact);if(at>=0)localFacts.splice(at,1);}
+  });
+}
+function setPersonalize(on){
+  return factAction(async()=>{
+    account.profile=await profileCall('/api/profile/personalize',{on});
+    // 打开时，把这一页上已经确认过的情况一起记下。
+    if(on){
+      for(const f of localFacts.filter(f=>f.status==='confirmed'))account.profile=await profileCall('/api/profile/facts',{action:'add',key:f.key,value:f.value,evidenceRef:f.evidenceRef});
+      localFacts.length=0;
+    }
+  });
+}
+function inferFromCollections(){
+  inferState={running:true,note:'',relogin:false};renderMine();
+  profileCall('/api/profile/infer',{}).then(data=>{
+    if(personalized())account.profile={personalize:data.personalize,consentAt:data.consentAt,facts:data.facts,decisions:data.decisions};
+    else for(const p of data.proposals)if(!localFacts.some(f=>f.key===p.key&&f.value===p.value))localFacts.push({id:'l'+(++localSeq),key:p.key,value:p.value,source:'inferred',status:'pending',evidenceRef:p.evidenceRef});
+    inferState={running:false,relogin:false,note:data.proposals.length?`从你最近的收藏里推测了 ${data.proposals.length} 条，你确认之后才会用上。`:'从你最近的收藏里没看出和做选择有关的情况。'};
+  }).catch(error=>{inferState={running:false,note:error.message,relogin:!!error.relogin};})
+    .finally(()=>{renderMine();renderAdvisor();});
+}
+function deleteEverything(){
+  if(!deleteArmed){deleteArmed=true;renderMine();setTimeout(()=>{deleteArmed=false;renderMine();},6000);return;}
+  deleteArmed=false;
+  profileCall('/api/profile',undefined,'DELETE')
+    .then(()=>renderAccount({available:true,user:null},'已删除你在知镜的全部数据，并退出登录。'))
+    .catch(error=>{factNote=error.message;renderMine();});
+}
+function factChip(f){
+  return el('span',{class:'sit-chip'},[
+    el('span',{class:'sit-k',text:FACT_LABELS[f.key]||'情况'}),el('span',{text:f.value}),
+    f.source==='inferred'?el('span',{class:'sit-src',text:'来自收藏'}):null,
+    button('×',()=>removeFact(f),{class:'sit-x','aria-label':'删除「'+f.value+'」',title:'删除'})
+  ]);
+}
+function pendingRow(f){
+  return el('div',{class:'sit-pending'},[
+    el('p',{},[el('span',{class:'sit-k',text:'知镜猜'}),`${f.value}（${FACT_LABELS[f.key]||'情况'}），对吗？`]),
+    f.evidenceRef?el('p',{class:'note',text:'依据：'+f.evidenceRef}):null,
+    el('div',{class:'row'},[button('对，记下',()=>confirmFact(f),{class:'btn small'}),button('不对',()=>removeFact(f),{class:'btn ghost small'})])
+  ]);
+}
+function memoryBlock(){
+  if(!account.user)return null;
+  const parts=[el('h3',{class:'mine-sub',text:'知镜记住的情况'})];
+  if(!account.user.canRemember){
+    parts.push(el('p',{class:'note',text:'没读到你的知乎资料，暂时不能记住你的情况。'}));
+    return el('section',{class:'mine-memory'},parts);
+  }
+  const p=account.profile;
+  const inferBtn=button(inferState.running?'正在读你的收藏…':'用我的收藏推测我在考虑什么',inferFromCollections,{class:'btn ghost small',disabled:inferState.running});
+  const deleteBtn=button(deleteArmed?'确定删除？再点一次':'删除我在知镜的全部数据',deleteEverything,{class:'link-btn danger'});
+  if(!p)parts.push(el('p',{class:'note',text:'正在读取…'}));
+  else if(!p.personalize){
+    parts.push(
+      el('p',{class:'note',text:'还没打开。打开后，你告诉知镜的情况和想过的问题会存进知镜的数据库，下次登录还在；随时可以删，关掉就全部删除。知乎授权 token 不保存。'}),
+      el('div',{class:'row'},[button('记住我的情况',()=>setPersonalize(true),{class:'btn small'}),inferBtn,deleteBtn])
+    );
+  }else{
+    const confirmed=p.facts.filter(f=>f.status==='confirmed');
+    parts.push(
+      confirmed.length?el('div',{class:'sit-chips'},confirmed.map(factChip)):el('p',{class:'note',text:'还没有记下的情况。和知镜聊的时候，它会问你要不要记下。'}),
+      ...p.facts.filter(f=>f.status==='pending').map(pendingRow),
+      p.decisions.length?el('div',{class:'mine-decisions'},[
+        el('p',{class:'note',text:'最近想过的问题：'}),
+        el('div',{class:'chips'},p.decisions.map(d=>button(d.question.length>24?d.question.slice(0,24)+'…':d.question,()=>{
+          try{load(viewFor(normalizeQuestion(d.question)));}catch(error){$('ask-note').textContent=error.message;}
+        },{class:'chip-btn',title:d.note?'上次知镜的建议：'+d.note:d.question})))
+      ]):null,
+      el('div',{class:'row'},[inferBtn,button('关掉并删除这些情况',()=>setPersonalize(false),{class:'link-btn'}),deleteBtn]),
+      el('p',{class:'note',text:'存了什么：知乎昵称和头像、你确认过的情况（180 天后自动过期）、想过的问题和选过的条件。推测的情况 7 天内不确认就删除。'})
+    );
+  }
+  if(inferState.note)parts.push(el('p',{class:'note'+(inferState.relogin?' warn':'')},[inferState.note,' ',inferState.relogin?reloginLink():null]));
+  if(factNote)parts.push(el('p',{class:'note warn',text:factNote}));
+  return el('section',{class:'mine-memory'},parts);
+}
+
+// ── 决策陪伴：结合用户确认过的情况，用对照板里的原话帮他理清要核对什么；不替用户做决定 ──
+const QUICK_ASKS=['结合我选的情况帮我梳理','反对的声音主要在说什么','我还需要先弄清楚什么'];
+const turnSummary=reply=>[reply.understanding,reply.advice?.text,reply.nextQuestion?.text].filter(Boolean).join(' ').slice(0,400);
+async function askAdvisor(message){
+  const view=state.view;
+  if(!view||state.advisor.pending||!state.config?.adviceReady)return;
+  const advisor=state.advisor;
+  const turn={message,reply:null,error:''};
+  const history=advisor.turns.slice(-3).flatMap(t=>[{role:'user',text:t.message},t.reply?{role:'assistant',text:turnSummary(t.reply)}:null]).filter(Boolean);
+  advisor.turns.push(turn);advisor.pending=true;advisor.draft='';
+  render();
+  const body={
+    ref:view.kind==='sample'?{kind:'sample',topicId:view.topicId}:{kind:'ask',question:view.question},
+    selections:Object.entries(state.selectedForks).map(([fork,branch])=>({fork:Number(fork),branch})),
+    facts:confirmedFacts().map(({key,value})=>({key,value})),history,message
+  };
+  try{
+    const res=await fetch('/api/advice',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(100000)});
+    const data=await res.json().catch(()=>({}));
+    if(state.advisor!==advisor)return;
+    if(res.ok)turn.reply=data;
+    else{turn.error=data.error||'知镜这次没能想完，请稍后再试。';turn.expired=!!data.expired;}
+  }catch{
+    if(state.advisor!==advisor)return;
+    turn.error='连接中断或等太久了，请重试。';
+  }
+  advisor.pending=false;
+  render();
+  $('advisor').querySelector('.turn:last-child')?.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function retryLast(){
+  const last=state.advisor.turns.pop();
+  if(last)askAdvisor(last.message);
+}
+function pushbackQuote(ref){
+  const cond=ref.type==='adds_condition';
+  return el('div',{class:'pushback'+(cond?' cond':'')},[el('figure',{class:'pb-item'},[
+    el('blockquote',{text:ref.commentText}),
+    el('figcaption',{text:`${ref.typeLabel||'读者异议'} · 读者评论原话 · 在 ${ref.author||'匿名用户'} 的回答下`})
+  ])]);
+}
+const refView=ref=>ref.ref==='pushback'?pushbackQuote(ref):evidenceFigure(ref,boardById,NO_PB);
+function foundQuote(f){
+  let link=null;
+  try{
+    const u=new URL(f.source.url);
+    if(u.protocol==='https:'&&(u.hostname==='zhihu.com'||u.hostname.endsWith('.zhihu.com')))link=el('a',{href:u.href,target:'_blank',rel:'noopener noreferrer',class:'src',text:'知乎 ↗'});
+  }catch{}
+  const who=f.source.author||'匿名用户';
+  return el('figure',{class:'evidence'},[
+    el('blockquote',{text:f.text}),
+    el('figcaption',{},[el('span',{text:(f.kind==='comment'?`读者评论 · 在 ${who} 的回答下`:`${who} · ${f.source.voteUp??'—'} 赞`)+` · 《${f.source.title}》`}),link])
+  ]);
+}
+function replySection(title,children,cls=''){
+  return el('section',{class:'reply-sec '+cls},[el('h5',{class:'reply-k',text:title}),...children]);
+}
+function replyView(reply,latest){
+  const parts=[];
+  if(reply.understanding)parts.push(el('p',{class:'reply-understanding'},[el('span',{class:'reply-k',text:'我理解的是'}),reply.understanding]));
+  if(reply.points.length)parts.push(replySection('关键判断',[el('ol',{class:'reply-points'},reply.points.map(p=>el('li',{},[
+    el('p',{class:'point-text'},[p.text,p.basis==='speculation'?el('span',{class:'basis',text:'推测 · 没有原话支持'}):null]),
+    p.refs.length?el('details',{class:'point-refs'},[el('summary',{text:`看依据（${p.refs.length} 段原话）`}),...p.refs.map(refView)]):null
+  ])))]));
+  // 读者反驳先露一条，其余收起，避免一轮回答占满屏幕。
+  if(reply.counterpoints.length){
+    const [first,...more]=reply.counterpoints;
+    parts.push(replySection('评论区里要当心的声音',[pushbackQuote(first),
+      more.length?el('details',{class:'point-refs'},[el('summary',{text:`还有 ${more.length} 条`}),...more.map(pushbackQuote)]):null]));
+  }
+  if(reply.assumptions.length||reply.gaps.length)parts.push(el('div',{class:'reply-pair'},[
+    reply.assumptions.length?replySection('这些判断依赖的前提',[el('ul',{class:'reply-list'},reply.assumptions.map(a=>el('li',{text:a})))]):null,
+    reply.gaps.length?replySection('上面的原话回答不了',[el('ul',{class:'reply-list'},reply.gaps.map(g=>el('li',{text:g})))]):null
+  ]));
+  if(reply.search){
+    const s=reply.search;
+    parts.push(replySection(`知镜又去知乎搜了「${s.query}」`,s.failed
+      ?[el('p',{class:'note',text:s.quota?'今天的检索次数用完了，这次没能补充搜索。':'补充搜索没成功，稍后可以再问一次。'})]
+      :s.found.length?[s.summary?el('p',{},[el('span',{class:'basis ai',text:'AI 概括'}),s.summary]):null,
+        el('details',{class:'point-refs'},[el('summary',{text:`看搜到的 ${s.found.length} 段原话`}),...s.found.map(foundQuote)])]
+      :[el('p',{class:'note',text:'没搜到能直接回答的原话。'})],'reply-search'));
+  }
+  if(reply.advice){
+    const a=reply.advice;
+    const basis=[...a.facts.map(f=>'你的「'+f.label+'」'),a.refs.length?`${a.refs.length} 段原话`:null].filter(Boolean);
+    parts.push(el('section',{class:'reply-advice'},[
+      el('h5',{class:'reply-k',text:'可以先做的一步（随时可以推翻）'}),
+      el('p',{class:'advice-text',text:a.text}),
+      el('p',{class:'note',text:basis.length?'依据：'+basis.join(' + '):'这一步没有直接依据，是知镜的推测。'}),
+      a.refs.length?el('details',{class:'point-refs'},[el('summary',{text:'看这几段原话'}),...a.refs.map(refView)]):null
+    ]));
+  }
+  if(reply.nextQuestion){
+    const q=reply.nextQuestion;
+    parts.push(el('section',{class:'reply-next'},[
+      el('h5',{class:'reply-k',text:'知镜想再问你一句'}),el('p',{text:q.text}),
+      latest&&q.options.length?el('div',{class:'chips'},q.options.map(option=>button(option,()=>askAdvisor(option),{class:'chip-btn',disabled:state.advisor.pending}))):null
+    ]));
+  }
+  const fresh=reply.factProposals.filter(f=>!f.done&&!confirmedFacts().some(c=>c.key===f.key&&c.value===f.value));
+  if(latest&&fresh.length)parts.push(el('section',{class:'reply-facts'},[
+    el('h5',{class:'reply-k',text:'从你的话里听到'}),
+    ...fresh.map(f=>el('div',{class:'proposal'},[
+      el('span',{class:'sit-chip'},[el('span',{class:'sit-k',text:f.label}),el('span',{text:f.value})]),
+      button('记下',()=>{f.done=true;addFact(f.key,f.value,{evidenceRef:'对话：「'+f.quote+'」'});},{class:'btn small'}),
+      button('不用',()=>{f.done=true;renderAdvisor();},{class:'link-btn'})
+    ])),
+    el('p',{class:'note',text:'记下之后，知镜下次回答会参考它。'})
+  ]));
+  if(reply.personalized)parts.push(el('p',{class:'note',text:'这次参考了你记住的 '+reply.factsUsed+' 条情况。'}));
+  return el('div',{class:'reply'},parts);
+}
+function situationBlock(block){
+  const [,B]=block.options;
+  const picks=Object.entries(state.selectedForks).map(([f,b])=>({f:Number(f),fork:block.forks[Number(f)],branch:block.forks[Number(f)]?.branches?.[b]})).filter(p=>p.branch);
+  const chips=[
+    ...picks.map(p=>el('span',{class:'sit-chip pick '+(p.branch.lean===B?'b':'a')},[
+      el('span',{class:'sit-k',text:p.fork.label}),el('span',{text:p.branch.when}),
+      button('×',()=>{const next={...state.selectedForks};delete next[p.f];state.selectedForks=next;render();},{class:'sit-x','aria-label':'去掉「'+p.branch.when+'」',title:'去掉'})
+    ])),
+    ...confirmedFacts().map(factChip)
+  ];
+  const keySelect=el('select',{id:'fact-key','aria-label':'情况类别'},Object.entries(FACT_LABELS).map(([key,label])=>el('option',{value:key,text:label})));
+  const valueInput=el('input',{id:'fact-value',type:'text',maxlength:'40',autocomplete:'off',placeholder:'比如：家里能支持我一年','aria-label':'补充一条情况'});
+  const adder=el('form',{class:'sit-add'},[keySelect,valueInput,el('button',{type:'submit',class:'btn ghost small',text:'记下'})]);
+  adder.addEventListener('submit',event=>{
+    event.preventDefault();
+    const value=valueInput.value.trim();
+    if(!value){valueInput.focus();return;}
+    addFact(keySelect.value,value);
+  });
+  let memory=null;
+  if(!account.user)memory=el('p',{class:'note'},['这些情况只用在这一页，刷新就没了。',account.available?el('span',{},[' ',el('a',{href:'/auth/login',class:'link-btn',text:'用知乎登录'}),'后可以让知镜记住。']):null]);
+  else if(!account.user.canRemember)memory=el('p',{class:'note',text:'这些情况只用在这一页。没读到你的知乎资料，暂时不能记住。'});
+  else if(account.profile&&!account.profile.personalize)memory=el('p',{class:'note'},['这些情况只用在这一页。',button('让知镜记住',()=>setPersonalize(true),{class:'link-btn'}),'（存进知镜的数据库，随时可删）']);
+  else if(account.profile)memory=el('p',{class:'note',text:'已记住，下次登录还在。可以在上方「我的知乎」里查看和删除。'});
+  return el('section',{class:'situation','aria-labelledby':'sit-title'},[
+    el('h4',{id:'sit-title',class:'sit-title',text:'知镜会参考的情况'}),
+    chips.length?el('div',{class:'sit-chips'},chips):el('p',{class:'note',text:'还没有。在上面「哪些情况更接近你」点一下，或者在这里补一句。'}),
+    ...allFacts().filter(f=>f.status==='pending').map(pendingRow),
+    adder,memory,
+    factNote?el('p',{class:'note warn',text:factNote}):null
+  ]);
+}
+function renderAdvisor(){
+  const box=$('advisor');
+  const block=session.get()?.comparison;
+  if(block?.status!=='complete'||!block.options?.length){box.hidden=true;clear(box);return;}
+  box.hidden=false;
+  const head=el('header',{class:'advisor-head'},[
+    el('p',{class:'advisor-kicker',text:'知镜 · 决策陪伴'}),
+    el('h3',{id:'advisor-title',class:'advisor-title',text:'结合你的情况，把问题想清楚'}),
+    el('p',{class:'note',text:'知镜只用上面这些原话和你自己说的情况帮你梳理：哪些原话和你有关、依赖什么前提、还缺什么信息。它不给胜率，也不替你做决定。'})
+  ]);
+  if(!state.config?.adviceReady){box.replaceChildren(head,el('p',{class:'note',text:'决策陪伴暂未开放。'}));return;}
+  const advisor=state.advisor;
+  const turns=advisor.turns.map((t,i)=>{
+    const latest=i===advisor.turns.length-1;
+    return el('article',{class:'turn'},[
+      el('p',{class:'turn-user'},[el('span',{class:'sr-only',text:'你说：'}),t.message]),
+      t.reply?replyView(t.reply,latest)
+        :t.error?el('div',{class:'note warn'},[t.error,' ',t.expired?button('重新检索',()=>load(state.view,true),{class:'link-btn'}):latest?button('重试',retryLast,{class:'link-btn'}):null])
+        :el('div',{class:'progress'},[el('span',{class:'spinner','aria-hidden':'true'}),el('span',{text:'知镜正在对照原话想…通常 10–30 秒，需要补充搜索时会久一点。'})])
+    ]);
+  });
+  const input=el('textarea',{id:'advisor-input',rows:'2',maxlength:'300',
+    placeholder:advisor.turns.length?'接着说，或者回答上面的追问':'说说你的情况或顾虑，比如：家里能支持我一年，但我不想一直待在小公司'});
+  input.value=advisor.draft;
+  input.addEventListener('input',()=>{advisor.draft=input.value;});
+  const composer=el('form',{class:'composer'},[
+    el('label',{for:'advisor-input',class:'sr-only',text:'跟知镜说说你的情况或顾虑'}),
+    input,
+    el('div',{class:'composer-bar'},[
+      advisor.turns.length?null:el('div',{class:'chips'},QUICK_ASKS.map(q=>button(q,()=>askAdvisor(q),{class:'chip-btn',disabled:advisor.pending}))),
+      el('button',{type:'submit',class:'btn',disabled:advisor.pending,text:advisor.pending?'知镜在想…':'问知镜'})
+    ])
+  ]);
+  const submit=()=>{
+    const text=input.value.trim()||QUICK_ASKS[0];
+    askAdvisor(text);
+  };
+  composer.addEventListener('submit',event=>{event.preventDefault();submit();});
+  input.addEventListener('keydown',event=>{if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)){event.preventDefault();submit();}});
+  box.replaceChildren(...[head,situationBlock(block),turns.length?el('div',{class:'turns'},turns):null,composer].filter(Boolean));
 }
 
 $('examples').replaceChildren(...EXAMPLES.map(e=>button(e.question,()=>load(viewFor(e.question)),{
@@ -464,7 +834,11 @@ $('ask-form').addEventListener('submit',event=>{
 // ── 知乎登录：没配置凭据时不显示；OAuth token 只在服务端，浏览器只拿到昵称和头像 ──
 function renderAccount(me,note=''){
   const box=$('account');
-  if(!me?.available){clear(box);return;}
+  account.available=!!me?.available;
+  account.user=me?.user||null;
+  account.profile=null;
+  if(!account.user)localFacts.length=0;
+  if(!me?.available){clear(box);renderAdvisor();return;}
   const parts=[];
   if(me.user){
     if(me.user.avatar)parts.push(el('img',{class:'avatar',src:me.user.avatar,alt:'',width:24,height:24,referrerpolicy:'no-referrer'}));
@@ -478,8 +852,8 @@ function renderAccount(me,note=''){
   }
   if(note)parts.unshift(el('span',{class:'account-note',text:note}));
   box.replaceChildren(...parts);
-  if(me.user)loadMine();
-  else{$('mine').hidden=true;clear($('mine'));}
+  if(me.user){loadMine();loadProfile();}
+  else{$('mine').hidden=true;clear($('mine'));renderAdvisor();}
 }
 
 // ── 登录后：我的知乎收藏（挑一个问题对比 + 收藏体检） ──
@@ -535,6 +909,7 @@ function checkBlock(source,title,intro,label,enabled){
 }
 function renderMine(){
   const box=$('mine');
+  if(box.hidden)return;
   const head=el('h2',{id:'mine-title',class:'mine-title',text:'我的知乎'});
   if(mine.error){box.replaceChildren(head,el('p',{class:'note'},[mine.error,' ',mine.relogin?reloginLink():null]));return;}
   const items=mine.items||[];
@@ -550,7 +925,7 @@ function renderMine(){
     pick,
     checkBlock('collections','收藏体检',`看看你最近收藏的 ${Math.min(items.length,20)} 条内容，评论区有没有人当场不同意。`,'体检我的收藏',items.length>0),
     checkBlock('contents','答主视角','看看你自己发过的回答、文章和想法，评论区有没有人当场不同意。','体检我发过的内容',true)
-  ]));
+  ]),memoryBlock());
 }
 async function runMineCheckup(source){
   const check=mine.checks[source];
