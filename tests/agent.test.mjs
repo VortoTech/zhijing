@@ -234,3 +234,9 @@ test('哪边的理由更贴近你：只能点名两个选项之一；没理由�
   assert.equal(out.fit.refs[0].ref,'evidence');
   assert.ok(out.fit.refs[0].text);
 });
+
+test('哪边更贴近你：提醒里模型自带的「但」去掉，页面已有「但也留意另一边」',()=>{
+  const [A]=comparison.options;
+  const out=verifyAdvice({fit:{option:A,reason:'你家里能兜底，对上了这一边的理由',caveat:'但材料也说，已有好 offer 时直接工作更划算'}},catalog);
+  assert.equal(out.fit.caveat,'材料也说，已有好 offer 时直接工作更划算');
+});

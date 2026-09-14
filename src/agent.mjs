@@ -172,7 +172,9 @@ export function verifyAdvice(parsed,catalog,{message='',facts=[]}={}){
   // 这是「哪边的理由更适用于你」，所以不走 LEANS 拦截，但胜率、「你应该选」照样拦（clean 里的 BANNED）。
   const fitReason=clean(parsed?.fit?.reason,90);
   const fitOption=typeof parsed?.fit?.option==='string'&&(catalog.options||[]).includes(parsed.fit.option.trim())?parsed.fit.option.trim():null;
-  const fit=fitReason?{option:fitOption,reason:fitReason,caveat:clean(parsed?.fit?.caveat,60)||'',refs:ids(parsed.fit.evidence,null,2)}:null;
+  // 页面上已经写了「但也留意另一边：」，模型自己开头的「但」「不过」去掉，免得重复。
+  const fitCaveat=(clean(parsed?.fit?.caveat,60)||'').replace(/^(但是?|不过|同时|然而)[，,：:\s]*/,'');
+  const fit=fitReason?{option:fitOption,reason:fitReason,caveat:fitCaveat,refs:ids(parsed.fit.evidence,null,2)}:null;
   return {
     understanding:clean(parsed?.understanding,120)||'',
     fit,
