@@ -706,8 +706,11 @@ function pickFromChat(forkIndex,branchIndex){
   const branch=block?.forks?.[forkIndex]?.branches?.[branchIndex];
   if(!branch||state.advisor.pending)return;
   state.selectedForks={...state.selectedForks,[forkIndex]:branchIndex};
-  const more=Object.keys(state.selectedForks).length<3&&block.forks.some((_,i)=>state.selectedForks[i]==null);
-  state.advisor.turns.push({kind:'local',message:branch.when,text:`好，记下「${branch.when}」。`+(more?'还有别的吗？也可以直接点「结合我的情况帮我梳理」。':'点「结合我的情况帮我梳理」，我来对照原话帮你看。')});
+  const count=Object.keys(state.selectedForks).length;
+  const more=count<3&&block.forks.some((_,i)=>state.selectedForks[i]==null);
+  state.advisor.turns.push({kind:'local',message:branch.when,action:true,text:more
+    ?`记下了「${branch.when}」。还有更像你的可以接着点；说完了，就让我对照原话帮你看。`
+    :`已经记下 ${count} 条情况了。我来对照原话帮你看看？`});
   render();
 }
 // 回复里收起的部分：用户点了才展开
@@ -864,23 +867,28 @@ function contextBar(block){
 }
 function quickReplies(block){
   const advisor=state.advisor,busy=advisor.pending,last=advisor.turns.at(-1),src=lastAdvice();
+  const ready=hasSituation();
   const rows=[];
   if(last?.kind==='advice'&&last.reply?.nextQuestion?.options?.length){
     rows.push(['回答',last.reply.nextQuestion.options.map(option=>button(option,()=>askAdvisor(option),{class:'chip-btn',disabled:busy}))]);
   }
+  // 还没梳理过：说了情况就把「帮我梳理」放在最前面，做成主按钮
+  if(!src&&ready){
+    const count=Object.keys(state.selectedForks).length+confirmedFacts().length;
+    rows.push(['',[button(`帮我梳理（已记下 ${count} 条）`,()=>askAdvisor(QUICK_ASKS[0]),{class:'chip-btn primary',disabled:busy})]]);
+  }
   if(!src&&Object.keys(state.selectedForks).length<3){
     const open=block.forks.map((fork,i)=>({fork,i})).filter(({i})=>state.selectedForks[i]==null).slice(0,2);
-    if(open.length)rows.push(['你的情况更像',open.flatMap(({fork,i})=>fork.branches.map((b,j)=>button(b.when,()=>pickFromChat(i,j),{
+    if(open.length)rows.push([ready?'还可以补充':'你的情况更像',open.flatMap(({fork,i})=>fork.branches.map((b,j)=>button(b.when,()=>pickFromChat(i,j),{
       class:'chip-btn situation-chip '+(b.lean===block.options[1]?'b':'a'),disabled:busy,title:fork.label
     })))]);
   }
   const more=src
     ?SECTIONS.filter(sec=>sec.count(src)&&!revealed(src,sec.id)).map(sec=>button(sec.label+(sec.count(src)>1?' '+sec.count(src):''),()=>reveal(sec,src),{class:'chip-btn more-chip',disabled:busy}))
-    :QUICK_ASKS.map(q=>button(q,()=>askAdvisor(q),{class:'chip-btn',disabled:busy}));
-  const ready=hasSituation();
+    :(ready?QUICK_ASKS.slice(1):QUICK_ASKS).map(q=>button(q,()=>askAdvisor(q),{class:'chip-btn',disabled:busy}));
   more.push(button('找和我情况像的人',findPeersFor,{class:'chip-btn peer-chip',disabled:busy||!ready,title:ready?'按你的情况去知乎找处境相似的人':'先说一条你的情况'}));
-  rows.push([src?'也可以问':'或者',more]);
-  return el('div',{class:'quick-replies',role:'group','aria-label':'快捷回复'},rows.map(([label,chips])=>el('div',{class:'qr-row'},[el('span',{class:'qr-k',text:label}),...chips])));
+  rows.push([src?'也可以问':'也可以',more]);
+  return el('div',{class:'quick-replies',role:'group','aria-label':'快捷回复'},rows.map(([label,chips])=>el('div',{class:'qr-row'},[label?el('span',{class:'qr-k',text:label}):null,...chips])));
 }
 function composer(){
   const advisor=state.advisor;
@@ -931,7 +939,9 @@ function renderAdvisor(){
   advisor.turns.forEach((turn,i)=>{
     const latest=i===advisor.turns.length-1;
     messages.push(userMsg(turn.message));
-    if(turn.kind==='local')messages.push(botMsg([el('p',{text:turn.text})]));
+    // 记下情况后，知镜的这条消息里直接放「帮我梳理」，不让用户去下面找按钮。
+    if(turn.kind==='local')messages.push(botMsg([el('p',{text:turn.text}),
+      turn.action&&latest?button('好了，帮我梳理',()=>askAdvisor(QUICK_ASKS[0]),{class:'btn small bubble-action',disabled:advisor.pending}):null]));
     else if(turn.kind==='reveal')messages.push(sectionMsg(turn.section,turn.reply));
     else if(turn.error)messages.push(errorMsg(turn,latest));
     else if(turn.kind==='peers')messages.push(turn.result?peersMsg(turn.result):typingMsg('正在按你的情况去知乎找处境相似的人…'));

@@ -491,6 +491,9 @@ body.drawer-open{overflow:hidden;}
 .quick-replies .situation-chip.a{border-color:var(--a-line);color:var(--a);}
 .quick-replies .situation-chip.b{border-color:var(--b-line);color:var(--b);}
 .quick-replies .more-chip{background:var(--wash);}
+.quick-replies .chip-btn.primary{background:var(--a);border-color:var(--a);color:#fff;font-weight:600;padding:0 16px;}
+.quick-replies .chip-btn.primary:hover{filter:brightness(1.08);color:#fff;}
+.bubble-action{margin-top:10px;}
 .quick-replies .peer-chip{border-color:var(--a-line);color:var(--a);}
 .quick-replies .peer-chip:not(:disabled)::before{content:"◎ ";}
 .chat-foot{padding:8px 14px 12px;flex:none;}
