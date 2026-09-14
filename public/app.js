@@ -15,13 +15,13 @@ const MAX_FORKS=3;
 
 const session=createReadingSession();
 // activeReason 为 undefined 表示还没决定：宽屏默认展开第一条被评论区反驳的理由。
-const state={config:null,view:null,filter:'flagged',showAllForks:false,selectedForks:{},activeReason:undefined,openSources:new Set(),advisor:freshAdvisor()};
+const state={config:null,view:null,filter:'flagged',showAllForks:false,selectedForks:{},activeReason:undefined,openSources:new Set(),advisor:freshAdvisor(),chatOpen:undefined};
 // 登录账号与「知镜记住的情况」；没登录或没打开记住时，情况只存在这一页（localFacts）。
 const account={available:false,user:null,profile:null};
 const localFacts=[];
 let localSeq=0,boardById=new Map();
 const NO_PB={of:()=>[]};
-function freshAdvisor(){return {turns:[],pending:false,draft:'',adding:false,refocus:false};}
+function freshAdvisor(){return {turns:[],pending:false,draft:'',refocus:false};}
 let openCards=null,ticker=null;
 const $=id=>document.getElementById(id);
 function el(tag,props={},children=[]){
@@ -53,7 +53,7 @@ function viewFor(question){
 function clearResults(){
   for(const id of ['result-head','compare','advisor','sources-summary','sources-note','list','list-bar','diag-slot','source-note'])clear($(id));
   for(const id of ['sources','data-details']){$(id).hidden=true;$(id).open=false;}
-  $('advisor').hidden=true;
+  $('advisor').hidden=true;$('chat-launcher').hidden=true;document.body.classList.remove('chat-open');
 }
 function setBusy(busy){
   $('ask-btn').disabled=busy;
@@ -252,9 +252,13 @@ function closePost(){
   postReturnFocus?.focus?.();postReturnFocus=null;
 }
 $('post-drawer').addEventListener('click',event=>{if(event.target.dataset?.close)closePost();});
-document.addEventListener('keydown',event=>{if(event.key==='Escape')closePost();});
+document.addEventListener('keydown',event=>{
+  if(event.key!=='Escape')return;
+  if(!$('post-drawer').hidden)closePost();
+  else if(state.chatOpen&&!wideChat()&&!$('advisor').hidden)closeChat();
+});
 
-function evidenceFigure(e,byId,pb){
+function evidenceFigure(e,byId,pb,{ask=true}={}){
   const record=byId.get(e.recordId);
   const open=event=>record&&openPost(e,record,event.currentTarget);
   const quote=el('blockquote',{text:e.text,class:record?'clickable':false,tabindex:record?'0':false,role:record?'button':false,title:record?'看原帖':false});
@@ -267,7 +271,8 @@ function evidenceFigure(e,byId,pb){
     el('figcaption',{},[
       el('span',{text:attribution(e,record)}),
       record?button('看原帖',open,{class:'link-btn'}):null,
-      record?zhihuAnchor(record,e,'知乎 ↗'):null
+      record?zhihuAnchor(record,e,'知乎 ↗'):null,
+      ask&&state.config?.adviceReady?button('这句适合我吗？',()=>askAboutQuote(e),{class:'link-btn ask-link'}):null
     ]),
     // 答主在同一回答里交代的适用范围：原话逐字正确，不代表放在这里的用法没有前提。
     e.premise?.text?el('p',{class:'premise'},[el('span',{class:'premise-tag',text:'答主自己交代的前提'}),el('span',{text:e.premise.text})]):null,
@@ -355,9 +360,9 @@ function comparisonSections(block,records,sample){
         guidance.groups.length?el('div',{class:'guide-groups'},guidance.groups.map(group=>el('span',{class:'guide-pick '+sideOf(group.option)},[
           el('strong',{text:group.option+'：'}),group.matches.map(m=>m.when).join('、')
         ]))):null,
-        guidance.picked.length&&canAsk?button('结合这些情况问知镜 ↓',()=>{
-          $('advisor').scrollIntoView({behavior:'smooth',block:'start'});
-          askAdvisor('结合我选的情况帮我梳理');
+        guidance.picked.length&&canAsk?button('结合这些情况问知镜',()=>{
+          openChat({focus:false});
+          askAdvisor(QUICK_ASKS[0]);
         },{class:'btn small guide-cta',disabled:state.advisor.pending}):null
       ]),
       el('ol',{class:'forks'},shown.map((f,i)=>{
@@ -634,13 +639,25 @@ function memoryBlock(){
 }
 
 // ── 问知镜（聊天）：结合用户确认过的情况，用对照板里的原话帮他理清要核对什么；不替用户做决定 ──
-const QUICK_ASKS=['结合我选的情况帮我梳理','反对的声音主要在说什么','我还需要先弄清楚什么'];
+// 宽屏固定在右侧、窄屏从右侧滑出、手机全屏；收起后留右下角按钮。
+// 每次回复只说一句复述、最关键的两条判断和一个追问；反驳、缺口、补搜、下一步由用户点快捷回复展开（本地展开，不再调模型）。
+const QUICK_ASKS=['结合我的情况帮我梳理','反对的声音主要在说什么','我还需要先弄清楚什么'];
 const PEER_ASK='帮我找和我情况像的人';
+const MAIN_POINTS=2;
 const turnSummary=reply=>[reply.understanding,reply.advice?.text,reply.nextQuestion?.text].filter(Boolean).join(' ').slice(0,400);
 const viewRef=view=>view.kind==='sample'?{kind:'sample',topicId:view.topicId}:{kind:'ask',question:view.question};
 const selectionsOf=()=>Object.entries(state.selectedForks).map(([fork,branch])=>({fork:Number(fork),branch}));
 const factsOf=()=>confirmedFacts().map(({key,value})=>({key,value}));
 const hasSituation=()=>confirmedFacts().length+Object.keys(state.selectedForks).length>0;
+const wideChat=()=>matchMedia('(min-width: 1200px)').matches;
+
+function openChat({focus=true}={}){
+  state.chatOpen=true;renderAdvisor();
+  if(focus)requestAnimationFrame(()=>$('advisor-input')?.focus({preventScroll:true}));
+}
+function closeChat(){state.chatOpen=false;renderAdvisor();$('chat-launcher').focus();}
+function restartChat(){if(!state.advisor.pending){state.advisor=freshAdvisor();render();}}
+$('chat-launcher').addEventListener('click',()=>openChat());
 
 async function chatRequest(path,body,turn,onOk){
   const advisor=state.advisor;
@@ -678,6 +695,36 @@ function retryLast(){
   if(!last)return;
   if(last.kind==='peers')findPeersFor();else askAdvisor(last.message);
 }
+function askAboutQuote(e){
+  openChat({focus:false});
+  const text=e.text.length>90?e.text.slice(0,90)+'…':e.text;
+  askAdvisor(`「${text}」这句话适用于我吗？`);
+}
+// 冷启动：用对照板上的条件回答「你的情况」，本地记下，不调模型。
+function pickFromChat(forkIndex,branchIndex){
+  const block=session.get()?.comparison;
+  const branch=block?.forks?.[forkIndex]?.branches?.[branchIndex];
+  if(!branch||state.advisor.pending)return;
+  state.selectedForks={...state.selectedForks,[forkIndex]:branchIndex};
+  const more=Object.keys(state.selectedForks).length<3&&block.forks.some((_,i)=>state.selectedForks[i]==null);
+  state.advisor.turns.push({kind:'local',message:branch.when,text:`好，记下「${branch.when}」。`+(more?'还有别的吗？也可以直接点「结合我的情况帮我梳理」。':'点「结合我的情况帮我梳理」，我来对照原话帮你看。')});
+  render();
+}
+// 回复里收起的部分：用户点了才展开
+const SECTIONS=[
+  {id:'points',label:'还有哪些判断',count:r=>Math.max(0,r.points.length-MAIN_POINTS)},
+  {id:'counter',label:'评论区怎么反驳的',count:r=>r.counterpoints.length},
+  {id:'gaps',label:'还缺什么信息',count:r=>r.assumptions.length+r.gaps.length},
+  {id:'search',label:'你又去知乎搜到了什么',count:r=>r.search?1:0},
+  {id:'advice',label:'我下一步做什么',count:r=>r.advice?1:0}
+];
+const lastAdvice=()=>[...state.advisor.turns].reverse().find(t=>t.kind==='advice'&&t.reply)?.reply||null;
+const revealed=(reply,id)=>state.advisor.turns.some(t=>t.kind==='reveal'&&t.reply===reply&&t.section===id);
+function reveal(section,reply){
+  if(state.advisor.pending)return;
+  state.advisor.turns.push({kind:'reveal',section:section.id,message:section.label,reply});
+  render();
+}
 
 function pushbackQuote(ref){
   const cond=ref.type==='adds_condition';
@@ -686,7 +733,7 @@ function pushbackQuote(ref){
     el('figcaption',{text:`${ref.typeLabel||'读者异议'} · 读者评论原话 · 在 ${ref.author||'匿名用户'} 的回答下`})
   ])]);
 }
-const refView=ref=>ref.ref==='pushback'?pushbackQuote(ref):evidenceFigure(ref,boardById,NO_PB);
+const refView=ref=>ref.ref==='pushback'?pushbackQuote(ref):evidenceFigure(ref,boardById,NO_PB,{ask:false});
 function foundQuote(f){
   const who=f.source.author||'匿名用户';
   return el('figure',{class:'evidence'},[
@@ -695,6 +742,11 @@ function foundQuote(f){
   ]);
 }
 const quotes=(label,nodes)=>el('details',{class:'quotes'},[el('summary',{text:label}),...nodes]);
+const pointItem=p=>el('li',{},[
+  el('span',{text:p.text}),
+  p.basis==='speculation'?el('span',{class:'basis',text:'推测 · 没有原话支持'}):null,
+  p.refs.length?quotes(`原话 ${p.refs.length}`,p.refs.map(refView)):null
+]);
 
 // 气泡
 const botMsg=(children,cls='')=>el('div',{class:'msg bot '+cls},[
@@ -710,47 +762,20 @@ function errorMsg(turn,latest){
 function greetingMsg(block){
   const [A,B]=block.options;
   return botMsg([
-    el('p',{text:`我是知镜。你在「${A}」和「${B}」之间纠结，我不替你选，只帮你把上面的原话和你自己的情况对上。`}),
-    el('p',{text:'先跟我说说你的情况吧：经济上能不能兜底、在哪个城市、最怕的是什么。也可以直接点下面的问题。'})
+    el('p',{text:`我是知镜。你在「${A}」和「${B}」之间纠结，我不替你选，只帮你把左边的原话和你自己的情况对上。`}),
+    el('p',{text:'先说说你的情况吧：可以直接打字，也可以点下面更像你的选项。'})
   ]);
 }
 function adviceMsg(reply,latest){
   const parts=[];
-  if(reply.understanding)parts.push(el('p',{class:'bot-lead',text:reply.understanding}));
-  if(reply.points.length)parts.push(el('ul',{class:'bot-points'},reply.points.map(p=>el('li',{},[
-    el('span',{text:p.text}),
-    p.basis==='speculation'?el('span',{class:'basis',text:'推测 · 没有原话支持'}):null,
-    p.refs.length?quotes(`原话 ${p.refs.length}`,p.refs.map(refView)):null
-  ]))));
-  if(reply.counterpoints.length){
-    const [first,...more]=reply.counterpoints;
-    parts.push(el('div',{class:'bot-block'},[el('p',{class:'bot-k',text:'不过，评论区有人提醒：'}),pushbackQuote(first),
-      more.length?quotes(`还有 ${more.length} 条`,more.map(pushbackQuote)):null]));
-  }
-  if(reply.assumptions.length||reply.gaps.length)parts.push(el('div',{class:'bot-block'},[
-    el('p',{class:'bot-k',text:'这些我还不确定：'}),
-    el('ul',{class:'bot-list'},[...reply.assumptions.map(a=>el('li',{text:'前提：'+a})),...reply.gaps.map(g=>el('li',{text:'原话里没有：'+g}))])
-  ]));
-  if(reply.search){
-    const sr=reply.search;
-    parts.push(el('div',{class:'bot-block'},[el('p',{class:'bot-k',text:`我又去知乎搜了「${sr.query}」：`}),
-      ...(sr.failed?[el('p',{class:'bot-basis',text:sr.quota?'今天的检索次数用完了，这次没搜成。':'这次没搜成，稍后可以再问一次。'})]
-        :sr.found.length?[sr.summary?el('p',{},[el('span',{class:'basis ai',text:'AI 概括'}),sr.summary]):null,quotes(`看搜到的 ${sr.found.length} 段原话`,sr.found.map(foundQuote))]
-        :[el('p',{class:'bot-basis',text:'没搜到能直接回答的原话。'})])]));
-  }
-  if(reply.advice){
-    const a=reply.advice;
-    const basis=[...a.facts.map(f=>'你的「'+f.label+'」'),a.refs.length?`${a.refs.length} 段原话`:null].filter(Boolean);
-    parts.push(el('div',{class:'bot-advice'},[
-      el('p',{class:'bot-k',text:'可以先做的一步（随时可以推翻）'}),
-      el('p',{class:'advice-text',text:a.text}),
-      el('p',{class:'bot-basis'},[basis.length?'依据：'+basis.join(' + '):'这一步没有直接依据，是我的推测。',a.refs.length?quotes('看原话',a.refs.map(refView)):null])
-    ]));
-  }
+  if(reply.understanding)parts.push(el('p',{text:reply.understanding}));
+  const main=reply.points.slice(0,MAIN_POINTS);
+  if(main.length)parts.push(el('ul',{class:'bot-points'},main.map(pointItem)));
+  else if(reply.advice)parts.push(el('p',{class:'advice-text',text:reply.advice.text}));
   if(reply.nextQuestion)parts.push(el('p',{class:'bot-question',text:reply.nextQuestion.text}));
   const fresh=reply.factProposals.filter(f=>!f.done&&!confirmedFacts().some(c=>c.key===f.key&&c.value===f.value));
   if(latest&&fresh.length)parts.push(el('div',{class:'bot-block'},[
-    el('p',{class:'bot-k',text:'我从你的话里听到这些，要记下吗？记下后我会参考。'}),
+    el('p',{class:'bot-k',text:'我从你的话里听到这些，要记下吗？'}),
     el('div',{class:'proposal-row'},fresh.map(f=>el('span',{class:'proposal'},[
       el('span',{class:'sit-k',text:f.label}),el('span',{text:f.value}),
       button('记下',()=>{f.done=true;addFact(f.key,f.value,{evidenceRef:'对话：「'+f.quote+'」'});},{class:'mini-btn'}),
@@ -759,6 +784,26 @@ function adviceMsg(reply,latest){
   ]));
   if(reply.personalized)parts.push(el('p',{class:'bot-basis',text:'这次参考了你记住的 '+reply.factsUsed+' 条情况。'}));
   return botMsg(parts,'wide');
+}
+function sectionMsg(id,reply){
+  if(id==='points')return botMsg([el('p',{text:'还有这些：'}),el('ul',{class:'bot-points'},reply.points.slice(MAIN_POINTS).map(pointItem))],'wide');
+  if(id==='counter')return botMsg([el('p',{text:'评论区里有人当场这样说：'}),...reply.counterpoints.map(pushbackQuote)],'wide');
+  if(id==='gaps')return botMsg([el('p',{text:'这些我还不确定，可能要你自己去弄清：'}),
+    el('ul',{class:'bot-list'},[...reply.assumptions.map(a=>el('li',{text:'前提：'+a})),...reply.gaps.map(g=>el('li',{text:'原话里没有：'+g}))])]);
+  if(id==='search'){
+    const sr=reply.search;
+    return botMsg([el('p',{text:`我去知乎搜了「${sr.query}」。`}),
+      ...(sr.failed?[el('p',{class:'bot-basis',text:sr.quota?'今天的检索次数用完了，这次没搜成。':'这次没搜成，稍后可以再问一次。'})]
+        :sr.found.length?[sr.summary?el('p',{},[el('span',{class:'basis ai',text:'AI 概括'}),sr.summary]):null,...sr.found.map(foundQuote)]
+        :[el('p',{class:'bot-basis',text:'没搜到能直接回答的原话。'})])],'wide');
+  }
+  const a=reply.advice;
+  const basis=[...a.facts.map(f=>'你的「'+f.label+'」'),a.refs.length?`${a.refs.length} 段原话`:null].filter(Boolean);
+  return botMsg([el('div',{class:'bot-advice'},[
+    el('p',{class:'bot-k',text:'可以先做的一步（随时可以推翻）'}),
+    el('p',{class:'advice-text',text:a.text}),
+    el('p',{class:'bot-basis'},[basis.length?'依据：'+basis.join(' + '):'这一步没有直接依据，是我的推测。',a.refs.length?quotes('看原话',a.refs.map(refView)):null])
+  ])],'wide');
 }
 function peerCard(peer){
   const src=peer.source;
@@ -781,26 +826,25 @@ function peerCard(peer){
 function peersMsg(r){
   if(!r.peers.length)return botMsg([
     el('p',{text:'这次没找到处境和你明显相似的人。'}),
-    el('p',{class:'bot-basis',text:'把情况写得具体一点（城市、行业、家里能支持多久），我再找一次。'+(r.quota?'今天的检索次数用完了，这次只翻了原来的评论。':'')})
+    el('p',{class:'bot-basis',text:'把情况说得具体一点（城市、行业、家里能支持多久），我再找一次。'+(r.quota?'今天的检索次数用完了，这次只翻了原来的评论。':'')})
   ]);
   return botMsg([
-    el('p',{class:'bot-lead',text:r.queries.length?`按你的 ${r.queries.length} 条情况，我在知乎找到 ${r.peers.length} 个处境和你相似的人：`:`我在原来那批回答的评论里找到 ${r.peers.length} 个处境和你相似的人：`}),
+    el('p',{text:r.queries.length?`按你的 ${r.queries.length} 条情况，我在知乎找到 ${r.peers.length} 个处境和你相似的人：`:`我在原来那批回答的评论里找到 ${r.peers.length} 个处境和你相似的人：`}),
     ...r.peers.map(peerCard),
     el('p',{class:'bot-basis',text:'只收说话人讲自己经历的原话，一字未改；「哪里相似」是我的判断。他们后来怎么选的，看「经历与选择」。'})
   ],'wide');
 }
 
-// 知镜会参考的情况：选过的条件 + 确认过的情况；推测的待确认；可以随时补充
+// 知镜会参考的情况：只展示和删除；情况在对话里说
 function memoryNote(){
-  if(!account.user)return el('p',{class:'ctx-note'},['这些情况只用在这一页，刷新就没了。',account.available?el('span',{},[' ',el('a',{href:'/auth/login',class:'link-btn',text:'用知乎登录'}),'后可以让知镜记住。']):null]);
-  if(!account.user.canRemember)return el('p',{class:'ctx-note',text:'这些情况只用在这一页。没读到你的知乎资料，暂时不能记住。'});
-  if(account.profile&&!account.profile.personalize)return el('p',{class:'ctx-note'},['这些情况只用在这一页。',button('让知镜记住',()=>setPersonalize(true),{class:'link-btn'}),'（存进知镜的数据库，随时可删）']);
-  if(account.profile)return el('p',{class:'ctx-note',text:'已记住，下次登录还在。可以在上方「我的知乎」里查看和删除。'});
+  if(!account.user)return el('p',{class:'ctx-note'},['只用在这一页，刷新就没了。',account.available?el('span',{},[el('a',{href:'/auth/login',class:'link-btn',text:'用知乎登录'}),'后可以让知镜记住。']):null]);
+  if(!account.user.canRemember)return el('p',{class:'ctx-note',text:'只用在这一页。没读到你的知乎资料，暂时不能记住。'});
+  if(account.profile&&!account.profile.personalize)return el('p',{class:'ctx-note'},['只用在这一页。',button('让知镜记住',()=>setPersonalize(true),{class:'link-btn'}),'（随时可删）']);
+  if(account.profile)return el('p',{class:'ctx-note',text:'已记住，下次登录还在；可以在「我的知乎」里删除。'});
   return null;
 }
 function contextBar(block){
   const [,B]=block.options;
-  const advisor=state.advisor;
   const picks=Object.entries(state.selectedForks).map(([f,b])=>({f:Number(f),fork:block.forks[Number(f)],branch:block.forks[Number(f)]?.branches?.[b]})).filter(p=>p.branch);
   const chips=[
     ...picks.map(p=>el('span',{class:'sit-chip pick '+(p.branch.lean===B?'b':'a'),title:p.fork.label},[
@@ -809,46 +853,40 @@ function contextBar(block){
     ])),
     ...confirmedFacts().map(factChip)
   ];
-  const toggle=button(advisor.adding?'收起':'＋ 补充情况',()=>{
-    advisor.adding=!advisor.adding;renderAdvisor();
-    if(advisor.adding)$('fact-value')?.focus();
-  },{class:'link-btn','aria-expanded':String(!!advisor.adding)});
-  let adder=null;
-  if(advisor.adding){
-    const keySelect=el('select',{id:'fact-key','aria-label':'情况类别'},Object.entries(FACT_LABELS).map(([key,label])=>el('option',{value:key,text:label})));
-    const valueInput=el('input',{id:'fact-value',type:'text',maxlength:'40',autocomplete:'off',placeholder:'比如：家里能支持我一年','aria-label':'补充一条情况'});
-    adder=el('form',{class:'sit-add'},[keySelect,valueInput,el('button',{type:'submit',class:'btn ghost small',text:'记下'})]);
-    adder.addEventListener('submit',event=>{
-      event.preventDefault();
-      const value=valueInput.value.trim();
-      if(!value){valueInput.focus();return;}
-      addFact(keySelect.value,value).then(()=>$('fact-value')?.focus());
-    });
-  }
+  const pending=allFacts().filter(f=>f.status==='pending');
+  if(!chips.length&&!pending.length&&!factNote)return null;
   return el('div',{class:'chat-context'},[
-    el('div',{class:'ctx-chips'},[el('span',{class:'ctx-k',text:'知镜会参考'}),...(chips.length?chips:[el('span',{class:'ctx-empty',text:'还没有，在上面选一个条件，或者补充一条'})]),toggle]),
-    ...allFacts().filter(f=>f.status==='pending').map(pendingRow),
-    adder,
-    advisor.adding||chips.length?memoryNote():null,
+    chips.length?el('div',{class:'ctx-chips'},[el('span',{class:'ctx-k',text:'知镜会参考'}),...chips]):null,
+    ...pending.map(pendingRow),
+    chips.length?memoryNote():null,
     factNote?el('p',{class:'ctx-note warn',text:factNote}):null
   ]);
 }
-function quickReplies(){
-  const advisor=state.advisor,last=advisor.turns.at(-1);
-  const options=!advisor.turns.length?QUICK_ASKS
-    :last?.kind==='advice'&&last.reply?.nextQuestion?.options?.length?last.reply.nextQuestion.options
-    :['我还需要先弄清楚什么'];
+function quickReplies(block){
+  const advisor=state.advisor,busy=advisor.pending,last=advisor.turns.at(-1),src=lastAdvice();
+  const rows=[];
+  if(last?.kind==='advice'&&last.reply?.nextQuestion?.options?.length){
+    rows.push(['回答',last.reply.nextQuestion.options.map(option=>button(option,()=>askAdvisor(option),{class:'chip-btn',disabled:busy}))]);
+  }
+  if(!src&&Object.keys(state.selectedForks).length<3){
+    const open=block.forks.map((fork,i)=>({fork,i})).filter(({i})=>state.selectedForks[i]==null).slice(0,2);
+    if(open.length)rows.push(['你的情况更像',open.flatMap(({fork,i})=>fork.branches.map((b,j)=>button(b.when,()=>pickFromChat(i,j),{
+      class:'chip-btn situation-chip '+(b.lean===block.options[1]?'b':'a'),disabled:busy,title:fork.label
+    })))]);
+  }
+  const more=src
+    ?SECTIONS.filter(sec=>sec.count(src)&&!revealed(src,sec.id)).map(sec=>button(sec.label+(sec.count(src)>1?' '+sec.count(src):''),()=>reveal(sec,src),{class:'chip-btn more-chip',disabled:busy}))
+    :QUICK_ASKS.map(q=>button(q,()=>askAdvisor(q),{class:'chip-btn',disabled:busy}));
   const ready=hasSituation();
-  return el('div',{class:'quick-replies',role:'group','aria-label':'快捷回复'},[
-    ...options.map(option=>button(option,()=>askAdvisor(option),{class:'chip-btn',disabled:advisor.pending})),
-    button('找和我情况像的人',findPeersFor,{class:'chip-btn peer-chip',disabled:advisor.pending||!ready,title:ready?'按你的情况去知乎找处境相似的人':'先补充一条情况，或者在上面选一个条件'})
-  ]);
+  more.push(button('找和我情况像的人',findPeersFor,{class:'chip-btn peer-chip',disabled:busy||!ready,title:ready?'按你的情况去知乎找处境相似的人':'先说一条你的情况'}));
+  rows.push([src?'也可以问':'或者',more]);
+  return el('div',{class:'quick-replies',role:'group','aria-label':'快捷回复'},rows.map(([label,chips])=>el('div',{class:'qr-row'},[el('span',{class:'qr-k',text:label}),...chips])));
 }
 function composer(){
   const advisor=state.advisor;
   const input=el('textarea',{id:'advisor-input',rows:'1',maxlength:'300',placeholder:'说说你的情况或顾虑…',enterkeyhint:'send'});
   input.value=advisor.draft;
-  const fit=()=>{input.style.height='auto';input.style.height=Math.min(input.scrollHeight,160)+'px';};
+  const fit=()=>{input.style.height='auto';input.style.height=Math.min(input.scrollHeight,140)+'px';};
   input.addEventListener('input',()=>{advisor.draft=input.value;fit();});
   const form=el('form',{class:'chat-composer'},[
     el('label',{for:'advisor-input',class:'sr-only',text:'跟知镜说说你的情况或顾虑'}),
@@ -867,33 +905,46 @@ function composer(){
     if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing&&event.keyCode!==229){event.preventDefault();submit();}
   });
   requestAnimationFrame(fit);
-  return el('div',{class:'chat-foot'},[form,el('p',{class:'chat-hint',text:'Enter 发送 · Shift+Enter 换行 · 知镜只用上面的原话和你说的情况作答'})]);
+  return el('div',{class:'chat-foot'},[form,el('p',{class:'chat-hint',text:'Enter 发送 · Shift+Enter 换行'})]);
 }
 function renderAdvisor(){
-  const box=$('advisor');
+  const box=$('advisor'),launcher=$('chat-launcher');
   const block=session.get()?.comparison;
-  if(block?.status!=='complete'||!block.options?.length){box.hidden=true;clear(box);return;}
-  box.hidden=false;
+  if(block?.status!=='complete'||!block.options?.length||!state.config?.adviceReady){
+    box.hidden=true;launcher.hidden=true;clear(box);document.body.classList.remove('chat-open');return;
+  }
+  if(state.chatOpen===undefined)state.chatOpen=wideChat();
+  const open=!!state.chatOpen;
+  launcher.hidden=open;box.hidden=!open;
+  document.body.classList.toggle('chat-open',open);
+  launcher.replaceChildren(...[el('span',{class:'msg-avatar','aria-hidden':'true',text:'镜'}),el('span',{text:'问知镜'}),
+    state.advisor.turns.length?el('span',{class:'launcher-dot',title:'有进行中的对话'}):null].filter(Boolean));
+  if(!open){clear(box);return;}
+  const advisor=state.advisor;
   const head=el('header',{class:'chat-head'},[
     el('span',{class:'msg-avatar big','aria-hidden':'true',text:'镜'}),
-    el('div',{},[el('h3',{id:'advisor-title',class:'chat-title',text:'问知镜'}),el('p',{class:'chat-sub',text:'结合你的情况把问题想清楚 · 不给胜率，不替你选'})])
+    el('div',{class:'chat-titles'},[el('h3',{id:'advisor-title',class:'chat-title',text:'问知镜'}),el('p',{class:'chat-sub',text:'不给胜率，不替你选'})]),
+    advisor.turns.length?button('重新开始',restartChat,{class:'link-btn chat-restart',disabled:advisor.pending}):null,
+    button('收起',closeChat,{class:'chat-close','aria-label':'收起问知镜',title:'收起'})
   ]);
-  if(!state.config?.adviceReady){box.replaceChildren(head,el('p',{class:'note chat-off',text:'决策陪伴暂未开放。'}));return;}
-  const advisor=state.advisor;
   const messages=[greetingMsg(block)];
   advisor.turns.forEach((turn,i)=>{
     const latest=i===advisor.turns.length-1;
     messages.push(userMsg(turn.message));
-    if(turn.error)messages.push(errorMsg(turn,latest));
+    if(turn.kind==='local')messages.push(botMsg([el('p',{text:turn.text})]));
+    else if(turn.kind==='reveal')messages.push(sectionMsg(turn.section,turn.reply));
+    else if(turn.error)messages.push(errorMsg(turn,latest));
     else if(turn.kind==='peers')messages.push(turn.result?peersMsg(turn.result):typingMsg('正在按你的情况去知乎找处境相似的人…'));
     else messages.push(turn.reply?adviceMsg(turn.reply,latest):typingMsg('正在对照原话想…'));
   });
   const log=el('div',{class:'chat-log','aria-label':'和知镜的对话'},messages);
   const status=el('p',{class:'sr-only',role:'status',text:advisor.pending?'知镜正在回复':advisor.turns.length?'知镜已回复':''});
-  box.replaceChildren(head,contextBar(block),log,quickReplies(),composer(),status);
+  box.replaceChildren(...[head,contextBar(block),log,quickReplies(block),composer(),status].filter(Boolean));
   requestAnimationFrame(()=>{log.scrollTop=log.scrollHeight;});
-  if(advisor.refocus&&!advisor.pending){advisor.refocus=false;requestAnimationFrame(()=>$('advisor-input')?.focus({preventScroll:true}));}
-  else if(advisor.refocus)requestAnimationFrame(()=>$('advisor-input')?.focus({preventScroll:true}));
+  if(advisor.refocus){
+    if(!advisor.pending)advisor.refocus=false;
+    requestAnimationFrame(()=>$('advisor-input')?.focus({preventScroll:true}));
+  }
 }
 
 $('examples').replaceChildren(...EXAMPLES.map(e=>button(e.question,()=>load(viewFor(e.question)),{
