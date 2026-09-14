@@ -3,51 +3,94 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>知镜 · 两边的原话，和评论区的反驳</title>
+<title>知镜 · 把知乎的分歧摆上桌</title>
 <meta name="description" content="输入你正在纠结的选择，知镜把知乎上两边的真人原话并排摆出来，评论区里有人当场不同意的，也一起摆出来。每句都能核对，都署名答主。">
-<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/style.css?v=20260914-light3">
+<link rel="stylesheet" href="/light.css?v=20260914-light3">
 </head>
 <body>
-<main class="wrap">
-  <header class="hero">
-    <div class="topbar">
-      <p class="brand">知镜<span class="dot">.</span></p>
+<main class="wrap app-shell">
+  <header class="topbar global-nav">
+    <button id="brand-home" class="brand-button app-brand" type="button" aria-label="知镜首页"><img src="/assets/tone-hosts/rational.png" alt="" width="40" height="40"><span data-i18n="brandName">知镜</span></button>
+    <div class="home-actions">
+      <button id="language-toggle" class="language-toggle" type="button" aria-pressed="false" aria-label="切换为英文">中 / EN</button>
       <div id="account" class="account" aria-live="polite"></div>
     </div>
-    <h1>高赞回答，不一定适用于你。</h1>
-    <p class="lede">输入你在纠结的选择，把知乎上两边的真人原话并排摆出来——评论区里有人当场不同意的，也一起摆出来。</p>
-    <form id="ask-form" class="ask" role="search" novalidate>
-      <label for="q" class="sr-only">你在纠结什么</label>
-      <input id="q" name="q" type="search" maxlength="80" autocomplete="off" enterkeyhint="search" placeholder="你在纠结什么？比如：考研还是直接工作">
-      <button id="ask-btn" class="btn big" type="submit">对比两边</button>
-    </form>
-    <p id="ask-note" class="note" aria-live="polite"></p>
-    <div class="examples">
-      <span class="note">直接看示例：</span>
-      <div id="examples" class="chips" role="group" aria-label="示例问题"></div>
-    </div>
   </header>
-  <section id="mine" class="mine" hidden aria-labelledby="mine-title"></section>
-  <div id="error-slot" role="alert"></div>
-  <div id="status" role="status" aria-live="polite"></div>
-  <section id="results" aria-label="结果" aria-busy="false">
-    <div id="result-head"></div>
-    <div id="compare"></div>
-    <details id="sources" class="sources" hidden>
-      <summary id="sources-summary"></summary>
-      <div id="sources-note"></div>
-      <div id="list-bar" class="list-bar"></div>
-      <div id="list" class="list"></div>
+  <nav class="primary-nav" aria-label="主导航" data-i18n-aria="navigationLabel">
+    <button type="button" data-view-target="home"><img src="/assets/icons/house.svg" alt=""><span data-i18n="navHome">首页</span></button>
+    <button type="button" data-view-target="table"><img src="/assets/icons/chat-centered-text.svg" alt=""><span data-i18n="tableViewLabel">观点桌面</span></button>
+    <button type="button" data-view-target="mine"><img src="/assets/icons/user.svg" alt=""><span data-i18n="navMine">我的知乎</span></button>
+  </nav>
+  <section id="home-view" class="home-view" aria-labelledby="home-title">
+    <div class="search-welcome">
+      <div class="welcome-brand"><img src="/assets/tone-hosts/rational.png" alt="" width="100" height="100"><span data-i18n="brandName">知镜</span></div>
+      <h1 id="home-title" data-i18n="homeTitle">你正在纠结什么？</h1>
+      <p class="home-tagline" data-i18n="homeTagline">把问题交给知镜，看看知乎上的人怎么说。</p>
+    </div>
+    <div id="home-search-slot">
+      <div id="search-panel">
+        <form id="ask-form" class="ask" role="search" novalidate>
+          <label for="q" class="sr-only" data-i18n="searchLabel">搜索知乎观点话题</label>
+          <textarea id="q" name="q" rows="2" maxlength="80" autocomplete="off" enterkeyhint="search" placeholder="比如：第一份工作，选高薪小公司还是低薪大厂？" data-i18n-placeholder="searchPlaceholder"></textarea>
+          <div class="search-actions"><img class="search-icon" src="/assets/icons/magnifying-glass.svg" alt=""><button id="ask-btn" class="btn big" type="submit" data-i18n="searchButton">查看真实讨论</button></div>
+        </form>
+        <p id="ask-note" class="note" aria-live="polite"></p>
+        <section class="examples" aria-labelledby="hot-heading">
+          <h2 id="hot-heading"><span data-i18n="hotNow">热门话题推荐</span><span class="example-badge" data-i18n="exampleBadge">示例</span></h2>
+          <div id="examples" class="chips" role="group" aria-label="示例问题" data-i18n-aria="examplesLabel"></div>
+        </section>
+      </div>
+    </div>
+    <p class="home-proof" data-i18n="homeProof">真人原话 · 来源可核对 · 不替你做决定</p>
+  </section>
+
+  <section id="table-view" class="product-view" hidden aria-label="观点桌面" data-i18n-aria="tableViewLabel">
+    <div class="view-bar">
+      <button class="back-home" type="button" data-i18n="backHome">←　返回</button>
+      <button id="go-zhihu" class="switch-view" type="button" data-i18n="goZhihu">查看知乎真实话题</button>
+    </div>
+    <div id="table-result-head" class="table-topic-head"></div>
+    <div id="table-stage"></div>
+  </section>
+
+  <section id="zhihu-view" class="product-view" hidden aria-label="知乎真实话题与评论" data-i18n-aria="zhihuViewLabel">
+    <div class="view-bar">
+      <button class="back-home" type="button" data-i18n="backHome">←　返回</button>
+      <button id="go-table" class="switch-view" type="button" data-i18n="goTable">进入观点桌面</button>
+    </div>
+    <header class="hero zhihu-hero">
+      <p class="hero-kicker" data-i18n="zhihuKicker">知乎现场 · 真人原话</p>
+      <h1 data-i18n="zhihuTitle">看看知乎里，大家真的怎么说。</h1>
+      <p class="lede" data-i18n="zhihuLede">搜索一个话题，保留答主原话、赞数和评论区里的当场反驳。</p>
+    </header>
+    <div id="result-search-slot"></div>
+    <div id="error-slot" role="alert"></div>
+    <div id="status" role="status" aria-live="polite"></div>
+    <section id="results" aria-label="结果" aria-busy="false" data-i18n-aria="resultsLabel">
+      <div id="result-head"></div>
+      <div id="compare"></div>
+      <details id="sources" class="sources" hidden>
+        <summary id="sources-summary"></summary>
+        <div id="sources-note"></div>
+        <div id="list-bar" class="list-bar"></div>
+        <div id="list" class="list"></div>
+      </details>
+    </section>
+    <details id="data-details" class="data-details" hidden>
+      <summary data-i18n="dataSummary">这些内容是怎么来的</summary>
+      <div id="source-note"></div><div id="diag-slot"></div>
     </details>
   </section>
-  <details id="data-details" class="data-details" hidden>
-    <summary>这些内容是怎么来的</summary>
-    <div id="source-note"></div><div id="diag-slot"></div>
-  </details>
+  <section id="mine-view" class="product-view mine-view" hidden aria-labelledby="my-page-title">
+    <header class="page-heading"><p class="hero-kicker" data-i18n="personalKicker">从你的积累，看到更多角度</p><h1 id="my-page-title" data-i18n="navMine">我的知乎</h1><p class="lede" data-i18n="personalIntro">收藏、创作与个人情况，都在这里。</p></header>
+    <div id="mine-welcome"></div>
+    <section id="mine" class="mine" hidden aria-labelledby="mine-title"></section>
+  </section>
 </main>
 <aside id="advisor" class="advisor" hidden aria-labelledby="advisor-title"></aside>
 <button id="chat-launcher" class="chat-launcher" type="button" hidden></button>
 <div id="post-drawer" class="drawer" hidden></div>
-<script type="module" src="/app.js"></script>
+<script type="module" src="/app.js?v=20260914-light3"></script>
 </body>
 </html>

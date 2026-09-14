@@ -13,6 +13,7 @@ import {fetchCollections,fetchContents,runCheckup,verifyUserApis} from './userda
 import {createStore} from './store.mjs';
 import {adviseTurn,inferProfile,FACT_KEYS} from './agent.mjs';
 import {findPeers,MAX_SITUATIONS,situationValue} from './peers.mjs';
+import {dailyBudget} from './budget.mjs';
 
 const root=new URL('../',import.meta.url);
 const topics=await loadTopics();
@@ -20,10 +21,35 @@ const topics=await loadTopics();
 const FILES={
   '/':['public/index.html','text/html; charset=utf-8'],
   '/app.js':['public/app.js','text/javascript; charset=utf-8'],
+  '/i18n.js':['public/i18n.js','text/javascript; charset=utf-8'],
   '/advisor.js':['public/advisor.js','text/javascript; charset=utf-8'],
   '/engine.js':['src/engine.mjs','text/javascript; charset=utf-8'],
   '/session.js':['public/session.js','text/javascript; charset=utf-8'],
-  '/style.css':['public/style.css','text/css; charset=utf-8']
+  '/light.css':['public/light.css','text/css; charset=utf-8'],
+  '/assets/icons/house.svg':['public/assets/icons/house.svg','image/svg+xml'],
+  '/assets/icons/chat-centered-text.svg':['public/assets/icons/chat-centered-text.svg','image/svg+xml'],
+  '/assets/icons/user.svg':['public/assets/icons/user.svg','image/svg+xml'],
+  '/assets/icons/magnifying-glass.svg':['public/assets/icons/magnifying-glass.svg','image/svg+xml'],
+  '/assets/icons/caret-right.svg':['public/assets/icons/caret-right.svg','image/svg+xml'],
+  '/assets/icons/microphone.svg':['public/assets/icons/microphone.svg','image/svg+xml'],
+  '/assets/icons/arrow-clockwise.svg':['public/assets/icons/arrow-clockwise.svg','image/svg+xml'],
+  '/assets/icons/arrow-left.svg':['public/assets/icons/arrow-left.svg','image/svg+xml'],
+  '/assets/icons/globe.svg':['public/assets/icons/globe.svg','image/svg+xml'],
+  '/assets/icons/x.svg':['public/assets/icons/x.svg','image/svg+xml'],
+  '/style.css':['public/style.css','text/css; charset=utf-8'],
+  '/assets/home/hero-telescope-v1.png':['public/assets/home/hero-telescope-v1.png','image/png'],
+  '/assets/tone-hosts/rational.png':['public/assets/tone-hosts/rational.png','image/png'],
+  '/assets/tone-hosts/sharp.png':['public/assets/tone-hosts/sharp.png','image/png'],
+  '/assets/tone-hosts/empathy.png':['public/assets/tone-hosts/empathy.png','image/png'],
+  '/assets/tone-hosts/humor.png':['public/assets/tone-hosts/humor.png','image/png'],
+  '/assets/tone-hosts/realist.png':['public/assets/tone-hosts/realist.png','image/png'],
+  '/assets/tone-hosts/longterm.png':['public/assets/tone-hosts/longterm.png','image/png'],
+  '/assets/tone-hosts/challenge.png':['public/assets/tone-hosts/challenge.png','image/png'],
+  '/assets/tone-hosts/socratic.png':['public/assets/tone-hosts/socratic.png','image/png'],
+  '/assets/table/chair.png':['public/assets/table/chair.png','image/png'],
+  '/assets/table/chair-ring.png':['public/assets/table/chair-ring.png','image/png'],
+  '/assets/table/tabletop-light.png':['public/assets/table/tabletop-light.png','image/png'],
+  '/assets/table/tabletop.png':['public/assets/table/tabletop.png','image/png']
 };
 
 const CSP="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://*.zhimg.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
@@ -31,19 +57,6 @@ const DEFAULT_LIVE_DAILY_LIMIT=200;
 const DEFAULT_ADVICE_DAILY_LIMIT=600;
 const PARTIAL_TTL_MS=3*60*1000;
 const QUOTA_MESSAGE='今天的实时检索次数已用完，北京时间 0 点恢复。可以先看看示例。';
-
-// 每次真正触发检索与模型的实时请求计一次，按北京时间自然日清零；缓存命中不计。
-function dailyBudget(raw,fallback=DEFAULT_LIVE_DAILY_LIMIT){
-  const parsed=Number.parseInt(raw,10);
-  const limit=parsed>0?parsed:fallback;
-  let day='',used=0;
-  return {take(){
-    const today=new Date(Date.now()+8*3600*1000).toISOString().slice(0,10);
-    if(today!==day){day=today;used=0;}
-    if(used>=limit)return false;
-    used++;return true;
-  }};
-}
 
 function send(res,status,value){
   res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});
@@ -134,7 +147,10 @@ function validateAdvice(input){
     .filter(h=>h.text);
   const message=typeof input.message==='string'?input.message.trim():'';
   if(message.length>300)throw new Error('一次说的话请控制在 300 字以内。');
-  return {view,selections,facts,history,message};
+  const focus=input.focus;
+  if(focus!=null&&(typeof focus.recordId!=='string'||!['answer','comment'].includes(focus.kind)||typeof focus.text!=='string'||focus.text.length>4000))throw new Error('原话格式不正确');
+  return {view,selections,facts,history,message,tone:typeof input.tone==='string'?input.tone:'',language:input.language==='en'?'en':'zh',
+    focus:focus?{recordId:focus.recordId,kind:focus.kind,text:focus.text,commentIndex:focus.commentIndex??null}:null};
 }
 const sameOrigin=req=>!req.headers.origin||new URL(req.headers.origin).host===req.headers.host;
 
@@ -160,7 +176,7 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
   const log=line=>(dependencies.log||console.info)(line);
   let inFlight=0;
   const datasets=new Map();
-  const liveBudget=dailyBudget(env.ZHIJING_LIVE_DAILY_LIMIT);
+  const liveBudget=dailyBudget(env.ZHIJING_LIVE_DAILY_LIMIT,DEFAULT_LIVE_DAILY_LIMIT);
   const adviceBudget=dailyBudget(env.ZHIJING_ADVICE_DAILY_LIMIT,DEFAULT_ADVICE_DAILY_LIMIT);
   setInterval(()=>store.sweep().catch(()=>{}),3600*1000).unref();
 
@@ -255,7 +271,7 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
         if(!liveBudget.take())throw Object.assign(new Error('今日实时检索次数已用完'),{quota:true});
         return searchAgent(query,env);
       }:null;
-      const result=await advise({question:found.question,selections:input.selections,facts,history:input.history,message:input.message},found.dataset,env,{search});
+      const result=await advise({...input,question:found.question,facts},found.dataset,env,{search});
       if(personalized){
         store.saveDecision(user.userId,{question:found.question,selections:result.selected.map(({label,when,lean})=>({label,when,lean})),note:result.advice?.text||''})
           .catch(()=>log(JSON.stringify({event:'store_failed',op:'saveDecision'})));
@@ -301,7 +317,7 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
       }).filter(Boolean)
     ].slice(0,MAX_SITUATIONS);
     if(!situations.length)return send(res,400,{error:'先补充一条你的情况，或者在上面选一个更接近你的条件。'});
-    const key=found.question+'\u0000'+situations.map(s=>s.value).join('\u0000');
+    const key=JSON.stringify([found.question,situations,found.dataset.comparison]);
     const hit=peerCache.get(key);
     if(hit&&Date.now()<hit.expires){
       try{const {dropped,...body}=await hit.pending;return send(res,200,{...body,cached:true});}catch{}
@@ -320,8 +336,8 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
     peerCache.set(key,entry);
     try{
       const result=await entry.pending;
-      // 没找到人不缓存，用户可以换个说法或者马上再找一次。
-      if(!result.peers.length&&peerCache.get(key)===entry)peerCache.delete(key);
+      // 空结果、部分失败和限额结果不进入成功缓存，允许再试。
+      if((!result.peers.length||result.failed||result.quota)&&peerCache.get(key)===entry)peerCache.delete(key);
       // 日志不记录用户情况与原话。
       log(JSON.stringify({event:'peers',durationMs:Date.now()-started,situations:situations.length,queries:result.queries.length,searched:result.searched,
         peers:result.peers.length,fromDataset:result.peers.filter(p=>p.source.fromDataset).length,failed:result.failed,quota:!!result.quota,dropped:result.dropped??0}));
@@ -339,7 +355,7 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
     if(req.method!=='GET'&&!sameOrigin(req))return send(res,403,{error:'请求来源不匹配'});
     if(req.method==='POST'&&!req.headers['content-type']?.startsWith('application/json'))return send(res,415,{error:'请发送 JSON 请求'});
     const user=oauth.available?await oauth.current(cookies):null;
-    if(!user)return send(res,401,{error:'请先用知乎登录。'});
+    if(!user)return send(res,401,{error:'请先用知乎登录。',relogin:true});
     if(!user.userId)return send(res,409,{error:'没读到你的知乎资料，暂时不能保存你的情况。'});
     const id=user.userId;
     const snapshot=async()=>{
@@ -472,7 +488,7 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
         if(req.method==='POST'&&req.headers.origin&&new URL(req.headers.origin).host!==req.headers.host)return send(res,403,{error:'请求来源不匹配'});
         const cookies=parseCookies(req.headers.cookie);
         const user=oauth.available?await oauth.current(cookies):null;
-        if(!user)return send(res,401,{error:'请先用知乎登录。'});
+        if(!user)return send(res,401,{error:'请先用知乎登录。',relogin:true});
         const token=oauth.accessToken(cookies);
         if(!token)return send(res,401,{error:'知乎授权已过期（有效期 1 小时），重新登录后才能读取收藏。',relogin:true});
         if(!configuration(env).zhihuReady)return send(res,503,{error:'读取收藏暂不可用。'});
@@ -492,18 +508,24 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
         if(url.pathname==='/api/my/verify'){
           const results=await verify(env,token);
           log(JSON.stringify({event:'verify',results:results.map(r=>`${r.id}:${r.status}`)}));
-          if(results.some(r=>r.code===20001))oauth.dropToken(cookies);
-          return send(res,200,{results});
+          const relogin=results.some(r=>[20001,401,403].includes(r.code));
+          if(relogin)oauth.dropToken(cookies);
+          return send(res,200,{results,relogin});
         }
 
         // 体检对象：近期收藏（默认），或本人发过的内容（答主视角）。
-        let source='collections';
-        try{if((await readBody(req))?.source==='contents')source='contents';}catch{}
+        if(!req.headers['content-type']?.startsWith('application/json'))return send(res,415,{error:'请发送 JSON 请求'});
+        let source='collections',refresh=false;
+        try{
+          const input=await readBody(req);
+          if(!input||typeof input!=='object'||Array.isArray(input)||!['collections','contents'].includes(input.source??'collections'))throw new Error();
+          source=input.source??'collections';refresh=input.refresh===true;
+        }catch{return send(res,400,{error:'体检对象无效，请选择收藏或本人内容。'});}
         if(!askReady(env))return send(res,503,{error:'体检暂未开放。'});
         // 读不到资料的用户没有 uid：按会话区分，避免体检结果串到别人身上；两种体检分开缓存。
         const key=source+':'+(user.uid||user.hashId||('sid:'+cookies.zj_sid));
         const hit=checkups.get(key);
-        if(hit&&Date.now()<hit.expires){
+        if(hit&&Date.now()<hit.expires&&!(refresh&&hit.partial)){
           try{return send(res,200,await hit.pending);}catch{}
         }
         if(inFlight>=4)return send(res,429,{error:'当前请求较多，请稍后再试。'});
@@ -515,6 +537,8 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
         checkups.set(key,entry);
         try{
           const result=await entry.pending;
+          entry.partial=!!result.incomplete;
+          if(entry.partial)entry.expires=Date.now()+PARTIAL_TTL_MS;
           log(JSON.stringify({event:'checkup',source,durationMs:Date.now()-started,checked:result.checked,matched:result.matched,pushback:result.pushback}));
           return send(res,200,result);
         }catch(error){
@@ -537,6 +561,11 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
         res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','Set-Cookie':await oauth.end(parseCookies(req.headers.cookie))});
         return res.end('{"ok":true}');
       }
+      if(req.method==='GET'&&url.pathname==='/api/usage')return send(res,200,{
+        scope:'process',timezone:'Asia/Shanghai',upstreamQuota:null,
+        note:'本进程调用预算，重启清零；不是知乎平台剩余额度。实时分析或体检每次计一，陪伴补搜每次计一；缓存命中不计。',
+        live:liveBudget.snapshot(),advice:adviceBudget.snapshot()
+      });
       if(req.method==='GET'&&url.pathname==='/api/config'){
         const config=configuration(env);
         return send(res,200,{
