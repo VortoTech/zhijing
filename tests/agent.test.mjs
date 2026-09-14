@@ -252,3 +252,12 @@ test('观点桌面结合用户的情况：圆桌和辩论都把看两边确认�
     assert.equal(seen.user_situation[1],'经济状况：要自己付房租');
   }
 });
+
+test('圆桌：角色不能对用户下指令，「你应优先考虑……」这类分句删掉，其余照留',()=>{
+  const roles=[{key:'r1',id:'rational',name:'理性分析'}];
+  const out=verifyRoundtable({turns:[
+    {role:'r1',text:'根据你的情况，这一边的理由更贴近。你应优先考虑考研。'},
+    {role:'r1',text:'你还是选大厂吧。'}
+  ]},catalog,roles);
+  assert.deepEqual(out.turns.map(t=>t.text),['根据你的情况，这一边的理由更贴近。']);
+});

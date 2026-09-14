@@ -422,7 +422,7 @@ function roundtableView(block,byId){
           t.refs.length?quotes(`原话 ${t.refs.length}`,t.refs.map(refView)):null
         ])])),
       rt.pending?el('p',{class:'note rt-pending',text:'几位正在讨论…（约 10 秒）'}):null,
-      rt.error?el('p',{class:'note warn',text:rt.error}):null
+      rt.error?el('p',{class:'note warn'},[rt.error,' ',deskRoles().length>=2?button('重试',()=>{const last=rt.turns.at(-1);if(last?.user){rt.turns.pop();startRoundtable(last.text);}else startRoundtable();},{class:'link-btn',disabled:rt.pending}):null]):null
     ]):null,
     rt.turns.length?sayForm:null
   ]);
@@ -471,7 +471,7 @@ function debateView(block,byId){
     })),
     el('p',{class:'note',text:'或者用你自己的话：'}),
     form,
-    db.error?el('p',{class:'note warn',text:db.error}):null
+    db.error?el('p',{class:'note warn'},[db.error,' ',button('重试',()=>{const last=db.turns.at(-1);if(last?.user){db.turns.pop();debateSend(last.text);}else debateSend();},{class:'link-btn',disabled:db.pending})]):null
   ]);
   // 第 3 步：辩论进行中
   return el('div',{class:'desk-body db'},[
@@ -487,7 +487,7 @@ function debateView(block,byId){
           t.question?el('p',{class:'db-question',text:t.question}):null
         ])),
       db.pending?el('p',{class:'note',text:'知镜正在找原话反驳你…'}):null,
-      db.error?el('p',{class:'note warn',text:db.error}):null
+      db.error?el('p',{class:'note warn'},[db.error,' ',button('重试',()=>{const last=db.turns.at(-1);if(last?.user){db.turns.pop();debateSend(last.text);}else debateSend();},{class:'link-btn',disabled:db.pending})]):null
     ]),
     form
   ]);

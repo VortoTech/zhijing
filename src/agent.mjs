@@ -299,7 +299,7 @@ const DEBATE_PROMPT=[
   '2. rebuttal：用 agent_side 的原话和评论区反驳，打他论点里最薄弱的一环（不超过 120 字）；用到的编号写进 evidence，正文里不要出现编号。',
   '3. question：抛出一个他必须正面回应的追问（不超过 40 字）。',
   '4. message 为空说明用户刚选边还没发言：直接给出 agent_side 最有力的开场论点，concede 可以留空。',
-  '5. user_situation 是用户自己说过、确认过的情况（可能为空）。有的话，要拿他自己的情况检验他的立场：他站的这一边和他的处境对不对得上；不得编造他没说过的情况。',
+  '5. user_situation 是用户自己说过、确认过的情况（可能为空）。有的话，要拿他自己的情况检验他的立场：他站的这一边和他的处境对不对得上；不得编造他没说过的情况。如果他的情况正好支持他这一边，你也要站稳 agent_side：指出他的情况还没覆盖到的风险、前提或代价，不要替他那一边说话。',
   '6. 只针对论点，不针对人；不得编造数据或原话里没有的事实；不判胜负，不给胜率，不说「你应该选」。',
   '只输出 JSON：{"concede":"……","rebuttal":"……","evidence":["e3","p1"],"question":"……"}'
 ].join('\n');
@@ -318,8 +318,10 @@ const resolveRef=(catalog,id)=>{const item=catalog.items.get(id);return item.typ
 
 // 提示词拦不住模型编「隔壁小王」：点名具体的人和事的分句删掉，其余照留；删完没话了就整条不要。
 const ANECDOTE=/隔壁|邻居|[小老][王李张刘陈赵]|我的?(同学|朋友|表哥|表姐|表弟|表妹|同事|室友|亲戚)|我(认识|身边)的/;
+// 角色可以为某一边辩护，但不能对用户下指令：「你应优先考虑考研」「你还是选大厂」这种分句同样删掉。
+const DIRECTIVE=/你(就|还是|应该?|最好|得)(优先)?(考虑|选|去|走|放弃)/;
 const dropAnecdotes=text=>(text.match(/[^，,。！？；!?;]+[，,。！？；!?;]?/g)||[])
-  .filter(clause=>!ANECDOTE.test(clause)).join('').replace(/[，,；;]$/,'。').trim();
+  .filter(clause=>!ANECDOTE.test(clause)&&!DIRECTIVE.test(clause)).join('').replace(/[，,；;]$/,'。').trim();
 
 // 用户在「看两边」选过的条件和确认过的情况：观点桌面的圆桌和辩论也按这些来谈。
 function situationLines(input,catalog){
