@@ -12,7 +12,7 @@ import {createOAuth,parseCookies} from './oauth.mjs';
 import {fetchCollections,fetchContents,runCheckup,verifyUserApis} from './userdata.mjs';
 import {createStore} from './store.mjs';
 import {adviseTurn,inferProfile,FACT_KEYS} from './agent.mjs';
-import {findPeers,MAX_SITUATIONS} from './peers.mjs';
+import {findPeers,MAX_SITUATIONS,situationValue} from './peers.mjs';
 import {dailyBudget} from './budget.mjs';
 
 const root=new URL('../',import.meta.url);
@@ -313,7 +313,7 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
       ...facts.map((f,i)=>({id:'f'+i,label:FACT_KEYS[f.key],value:f.value})),
       ...input.selections.map(({fork,branch},i)=>{
         const f=block.forks[fork],b=f?.branches?.[branch];
-        return b?{id:'c'+i,label:f.label,value:b.when}:null;
+        return b?{id:'c'+i,label:f.label,value:situationValue(f,b)}:null;
       }).filter(Boolean)
     ].slice(0,MAX_SITUATIONS);
     if(!situations.length)return send(res,400,{error:'先补充一条你的情况，或者在上面选一个更接近你的条件。'});

@@ -1,0 +1,100 @@
+{
+  "artifacts": [
+    {
+      "artifact_id": "artifact_fb1a55d0e9cd46fcda2bbab1",
+      "current_revision_id": "revision_a9393e6c8186a1ccf5b5471f",
+      "filename": "deploy.md",
+      "kind": "document",
+      "mime": "text/markdown",
+      "rel_path": "docs/deploy.md",
+      "revisions": [
+        {
+          "artifact_revision_id": "revision_a9393e6c8186a1ccf5b5471f",
+          "produced_at": "2026-09-14T01:25:20-04:00",
+          "sha256": "01d50cc0ce625b831624fe304c22a3586ab61642f47fff131b2118fd96963809",
+          "size": 5539,
+          "turn_id": "local_1789363501982_okk9jtab"
+        }
+      ]
+    },
+    {
+      "artifact_id": "artifact_0960bb6f02ff7a387294fc69",
+      "current_revision_id": "revision_9568d5edfaefa831b8308bba",
+      "filename": "engine.mjs",
+      "kind": "document",
+      "mime": "text/javascript",
+      "rel_path": "src/engine.mjs",
+      "revisions": [
+        {
+          "artifact_revision_id": "revision_a15314bf7239cb1073aae45e",
+          "produced_at": "2026-09-14T01:40:10-04:00",
+          "sha256": "cafcd4c7334fc9e651680a7e79f2129fbe7470e22cb76601c4f757589da98d20",
+          "size": 16185,
+          "turn_id": "local_1789364036653_r41tgsd7"
+        },
+        {
+          "artifact_revision_id": "revision_ff2176034fc1987a96b8a0f6",
+          "produced_at": "2026-09-14T01:40:22-04:00",
+          "sha256": "44739c57f031f25ced0a3bab5b53911ee20e27a70f33bca7596292fd799482bc",
+          "size": 16420,
+          "turn_id": "local_1789364036653_r41tgsd7"
+        },
+        {
+          "artifact_revision_id": "revision_9568d5edfaefa831b8308bba",
+          "produced_at": "2026-09-14T01:40:42-04:00",
+          "sha256": "6880dfd66e98ebf24f6b1d28de2ad3829be18206b7c482887591749127beb226",
+          "size": 16777,
+          "turn_id": "local_1789364036653_r41tgsd7"
+        }
+      ]
+    },
+    {
+      "artifact_id": "artifact_879faf6f1277d2fd655be52e",
+      "current_revision_id": "revision_19f49207ddcb5aced8000efd",
+      "filename": "engine.test.mjs",
+      "kind": "document",
+      "mime": "text/javascript",
+      "rel_path": "tests/engine.test.mjs",
+      "revisions": [
+        {
+          "artifact_revision_id": "revision_c4a63881646f49417df8324e",
+          "produced_at": "2026-09-14T01:41:18-04:00",
+          "sha256": "d8a2760a83f2481be411f35a745b5592de9dd67264d68080da190dad047244fb",
+          "size": 12281,
+          "turn_id": "local_1789364036653_r41tgsd7"
+        },
+        {
+          "artifact_revision_id": "revision_19f49207ddcb5aced8000efd",
+          "produced_at": "2026-09-14T01:41:29-04:00",
+          "sha256": "9b15d3e55375e332ecabc7a6c20a357eeb13ce19564582f048e69a860040f839",
+          "size": 12300,
+          "turn_id": "local_1789364036653_r41tgsd7"
+        }
+      ]
+    },
+    {
+      "artifact_id": "artifact_c003e964cab49d9a55a40a37",
+      "current_revision_id": "revision_b79401069d8f9fab4572bcff",
+      "filename": "reading-regressions.test.mjs",
+      "kind": "document",
+      "mime": "text/javascript",
+      "rel_path": "tests/reading-regressions.test.mjs",
+      "revisions": [
+        {
+          "artifact_revision_id": "revision_b79401069d8f9fab4572bcff",
+          "produced_at": "2026-09-14T01:41:56-04:00",
+          "sha256": "fd061104da216216ad3271d97ee0b15268edd30397ad53c96fbd5ee810f0d95a",
+          "size": 9527,
+          "turn_id": "local_1789364036653_r41tgsd7"
+        }
+      ]
+    }
+  ],
+  "created_at": "2026-09-14T05:25:02.472400+00:00",
+  "current_turn_id": "local_1789364036653_r41tgsd7",
+  "execution_status": "completed",
+  "schema_version": 3,
+  "session_id": "45a6faae-36a1-4160-8dc3-096b08c875ad",
+  "task_id": "task_1789363501982_r61saghd",
+  "updated_at": "2026-09-14T05:43:50.964819+00:00"
+}

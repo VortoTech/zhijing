@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {peerQueries,findPeers,isSelfAccount} from '../src/peers.mjs';
+import {peerQueries,findPeers,isSelfAccount,situationValue} from '../src/peers.mjs';
 import {createServer} from '../src/server.mjs';
 
 const env={AI_BASE_URL:'https://example.invalid',AI_API_KEY:'k',AI_MODEL:'m',ZHIJING_ENABLE_PILOT:'1'};
@@ -24,6 +24,12 @@ test('检索词：情况 + 两个选项 + 经历，每条情况一条，最多 3
   assert.equal(qs[0],'要自己付房租 高薪小公司 低薪大厂 经历');
   assert.ok(qs.every(q=>q.length<=40));
   assert.equal(peerQueries('考研还是工作',[{value:'在杭州'}])[0],'在杭州 考研还是工作 经历');
+});
+
+test('条件的回答只是「是 / 否」这类时补上问题，完整的情况原样保留',()=>{
+  assert.equal(situationValue({label:'专业依赖一线产业吗？'},{when:'是（如AI、金融、品牌公关）'}),'专业依赖一线产业吗：是（如AI、金融、品牌公关）');
+  assert.equal(situationValue({label:'家里能兜底吗'},{when:'能'}),'家里能兜底吗：能');
+  assert.equal(situationValue({label:'你能否承受经济压力？'},{when:'经济压力大需稳定收入'}),'经济压力大需稳定收入');
 });
 
 test('自述：讲自己经历的才算，只有「我觉得 / 我建议」的表态不算',()=>{

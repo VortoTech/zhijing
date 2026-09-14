@@ -4,6 +4,7 @@ import {
   deriveTrustState,
   deriveBoundary,
   situationFit,
+  mentionPolarity,
   buildReadingMap,
   TRUST_STATES,
   ORDERS,
@@ -125,7 +126,59 @@ test('相关条件排序优先显示原话，不把反对或否定条件压到�
     record({id:'condition',objections:[objection()]})
   ], {topic: TOPIC, order: 'situation', situation: {stage: '应届生'}});
   assert.deepEqual(map.records.map(r=>r.id),['condition','silent']);
+  // 这条原话是「我这是社招，不是应届生」：仍然展示，但不计入「应届生」的正面覆盖。
+  assert.equal(map.situationCoverage[0].count,0);
+  assert.equal(map.situationCoverage[0].negatedOnly,1);
+});
+
+test('否定识别：关键词只出现在否定句里时标为 negated，不计入正面覆盖', () => {
+  const fit=situationFit(record({objections:[objection()]}),{stage:'应届生'},TOPIC);
+  assert.equal(fit.level,'reference');
+  assert.equal(fit.affirmative,false);
+  assert.equal(fit.evidence[0].polarity,'negated');
+  assert.equal(fit.evidence[0].text,'我这是社招，不是应届生，情况不一样。','否定句的原话照样逐字展示');
+  assert.match(fit.evidence[0].note,/只出现在否定句中/);
+  assert.match(fit.note,/说话人说的是自己不是这种情况/);
+});
+
+test('否定识别：同一条评论里正面提及优先于否定提及', () => {
+  const TOPIC2={...TOPIC,situationFields:[{id:'stage',label:'你的阶段',options:['应届生']}]};
+  const both=situationFit(record({
+    comments:['我当年应届生进的大厂，我同事不是应届生，情况不一样。'],
+    objections:[objection({commentText:'我当年应届生进的大厂，我同事不是应届生，情况不一样。'})]
+  }),{stage:'应届生'},TOPIC2);
+  assert.equal(both.affirmative,true);
+  assert.equal(both.evidence[0].polarity,'affirmative');
+  assert.match(both.note,/不判断适用性/);
+});
+
+test('否定识别：覆盖常见否定说法，正常提及不受影响', () => {
+  for(const text of ['我这是社招，不是应届生。','他并不是应届生','看的是社招而不是应届生','这类岗位不算应届生范畴','严格说称不上应届生']){
+    assert.equal(mentionPolarity(text,'应届生'),'negated',text);
+  }
+  for(const text of ['应届生就该看平台','对应届生来说平台更重要','我是应届生，选了大厂']){
+    assert.equal(mentionPolarity(text,'应届生'),'affirmative',text);
+  }
+  assert.equal(mentionPolarity('完全没提到这个词','应届生'),null);
+  assert.equal(mentionPolarity('不是应届生，但我也是应届生身份入职的','应届生'),'affirmative','有一次正面提及就按正面处理');
+});
+
+test('否定识别：句读边界内判定，跨句不误判', () => {
+  // 「不是」在上一句，和下一句的关键词之间隔了句号，不能算作否定。
+  assert.equal(mentionPolarity('钱多不是坏事。应届生更该看平台。','应届生'),'affirmative');
+  assert.equal(mentionPolarity('说实话，不是应届生的话另说','应届生'),'negated');
+});
+
+test('相关条件排序：正面提及排在只有否定提及的前面', () => {
+  const affirmativeComment='应届生确实该优先看平台，这是前提。';
+  const map=buildReadingMap([
+    record({id:'negated',voteUp:900,objections:[objection()]}),
+    record({id:'affirmative',voteUp:1,comments:[affirmativeComment],
+      objections:[objection({commentText:affirmativeComment})]})
+  ],{topic:TOPIC,order:'situation',situation:{stage:'应届生'}});
+  assert.deepEqual(map.records.map(r=>r.id),['affirmative','negated'],'正面提及优先，即使赞数低得多');
   assert.equal(map.situationCoverage[0].count,1);
+  assert.equal(map.situationCoverage[0].negatedOnly,1);
 });
 
 test('诊断：整张列表达标时判定 viable', () => {

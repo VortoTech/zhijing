@@ -30,6 +30,13 @@ const PEER_PROMPT=[
   '只输出 JSON：{"peers":[{"situation":"f0","similar":"同样要自己付房租","who":"n0s2","said":["n0s5"]}]}'
 ].join('\n');
 
+// 条件的回答有时只是「是（如AI、金融）」「否」，脱离问题看不懂，拿去检索也搜不到。这类回答前面补上问题。
+const ANSWER_LIKE=/^(是|否|有|没有|会|不会|能|不能|要|不要|对|不对)/;
+export function situationValue(fork,branch){
+  const when=String(branch?.when||'');
+  return ANSWER_LIKE.test(when)||when.length<=3?`${String(fork?.label||'').replace(/[？?]\s*$/,'')}：${when}`:when;
+}
+
 // 每条情况一次检索：情况原话 + 两个选项 + 「经历」。实测「情况 + 整句问题」搜到的多是泛泛建议（8 条里 1 条有自述），
 // 换成关键词 + 「经历」后 8 条里 6 条有自述。
 export function peerQueries(question,situations,options=[]){
