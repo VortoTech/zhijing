@@ -56,6 +56,16 @@ test('校验：编号必须存在，没有原话支持的判断标成推测；�
   assert.equal(verifyAdvice({advice:{text:'如果房租压力大，可以先问清小公司的融资进度再定。'}},catalog).adviceRejected,false);
 });
 
+test('校验：「更符合目标」「建议先去」这类替用户下判断的变体也拦，说理由的句子不拦',()=>{
+  const out=verifyAdvice({points:[
+    {text:'大厂的培训体系更适合没经验的新人',evidence:[idOf('如果没有经济压力')]},
+    {text:'你怕波动，低薪大厂可能更符合目标',evidence:[idOf('如果没有经济压力')]}
+  ]},catalog);
+  assert.deepEqual(out.points.map(p=>p.text),['大厂的培训体系更适合没经验的新人']);
+  assert.equal(verifyAdvice({advice:{text:'结合你的情况，小公司更符合你的规划。'}},catalog).adviceRejected,true);
+  assert.equal(verifyAdvice({advice:{text:'建议先去大厂待两年再说。'}},catalog).adviceRejected,true);
+});
+
 test('建议替用户选了一边：让模型重写一次；重写仍违规就不给建议',async()=>{
   const bad={understanding:'u',points:[],advice:{text:'可以先去低薪大厂，稳一点。'}};
   const good={understanding:'u2',points:[],advice:{text:'如果怕小公司撑不过一年，可以先问清它的融资和现金流。'}};

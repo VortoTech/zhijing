@@ -14,6 +14,7 @@ export const FACT_KEYS={
   risk:'风险承受',priority:'最看重',dealbreaker:'不能接受',other:'其他情况'
 };
 const BANNED=/胜率|概率|百分之|\d+(?:\.\d+)?\s*[%％]|打分|评分|得分|你应该选|你就选|建议你选|更适合你的是|最优解|稳赢/;
+const LEANS=/(更符合|更适合|更有利于|更利于|更值得)(你|您|目标|需求|情况|规划|期待)|(建议|倾向于?)(先)?(选|去|进)/;
 const SENSITIVE=/病|抑郁|焦虑症|怀孕|宗教|信仰|政治|党员|性取向|同性|离婚|负债|欠款|身份证|手机号|住址/;
 
 const str=(value,max)=>typeof value==='string'&&value.trim()&&value.trim().length<=max?value.trim():null;
@@ -113,10 +114,13 @@ export function verifyAdvice(parsed,catalog,{message='',facts=[]}={}){
     return out;
   };
   const clean=(value,max)=>{const text=str(value,max);return text&&!BANNED.test(text)?text:null;};
+  // 替用户下判断的变体：「考研可能更符合目标」「建议先去大厂」。原话里「大厂更适合新人」这类说理由的句子不拦。
+  const leansOption=text=>LEANS.test(text)&&(catalog.options||[]).some(option=>text.includes(option)||text.includes(option.slice(-2)));
   const points=[];
   for(const point of list(parsed?.points)){
     const text=clean(point?.text,70);
     if(!text)continue;
+    if(leansOption(text)){dropped++;continue;}
     const refs=ids(point.evidence,null,3);
     points.push({text,basis:refs.length?'evidence':'speculation',refs});
     if(points.length>=4)break;
@@ -128,7 +132,7 @@ export function verifyAdvice(parsed,catalog,{message='',facts=[]}={}){
     return new RegExp(`(选|选择|去|进)(${esc(option)}|${esc(option.slice(-2))})`).test(text);
   });
   const rawAdvice=clean(parsed?.advice?.text,140);
-  const adviceRejected=!!rawAdvice&&picksOption(rawAdvice);
+  const adviceRejected=!!rawAdvice&&(picksOption(rawAdvice)||leansOption(rawAdvice));
   const adviceText=adviceRejected?null:rawAdvice;
   const factKeys=[...new Set(list(parsed?.advice?.facts).filter(key=>facts.some(f=>f.key===key)))];
   const adviceRefs=adviceText?ids(parsed.advice.evidence,null,3):[];

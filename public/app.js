@@ -28,11 +28,11 @@ const TONE_PERSONAS=[
   {id:'challenge',label:'反方挑战',asset:'/assets/tone-hosts/challenge.png'},
   {id:'socratic',label:'苏格拉底追问',asset:'/assets/tone-hosts/socratic.png'}
 ];
-const toneById=id=>TONE_PERSONAS.find(t=>t.id===id)||TONE_PERSONAS[6];
+const toneById=id=>TONE_PERSONAS.find(t=>t.id===id)||TONE_PERSONAS[0];
 
 const session=createReadingSession();
 // activeReason 为 undefined 表示还没决定：宽屏默认展开第一条被评论区反驳的理由。
-const state={config:null,view:null,appView:'home',filter:'flagged',showAllForks:false,selectedForks:{},activeReason:undefined,openSources:new Set(),advisor:freshAdvisor(),chatOpen:undefined,tone:'challenge',tableQuote:'a',tableReply:'',tableDraft:'',tableQuestion:'',tableThinking:false,tableListening:false,tableVoiceError:''};
+const state={config:null,view:null,appView:'home',filter:'flagged',showAllForks:false,selectedForks:{},activeReason:undefined,openSources:new Set(),advisor:freshAdvisor(),chatOpen:undefined,tone:'rational',tableQuote:'a',tableReply:'',tableDraft:'',tableQuestion:'',tableThinking:false,tableListening:false,tableVoiceError:''};
 // 登录账号与「知镜记住的情况」；没登录或没打开记住时，情况只存在这一页（localFacts）。
 const account={available:false,user:null,profile:null,note:''};
 const localFacts=[];
@@ -214,9 +214,12 @@ function assignPushback(block,byId){
   return {of:e=>assigned.get(e)||[],total:used.size};
 }
 
+// 桌面中间每边只摆一句：跳过「成都 10000 20000 0.5」这种几乎没有字的片段；都不够长时取汉字最多的一句。
+const quoteWeight=e=>(String(e?.text||'').match(/[一-鿿]/g)||[]).length;
 function firstTableQuote(block,sideIndex){
   const side=block?.sides?.find(item=>item.option===block.options?.[sideIndex]);
-  return side?.reasons?.flatMap(reason=>reason.evidence||[])[0]||null;
+  const all=side?.reasons?.flatMap(reason=>reason.evidence||[])||[];
+  return all.find(e=>quoteWeight(e)>=12)||all.reduce((best,e)=>!best||quoteWeight(e)>quoteWeight(best)?e:best,null);
 }
 function tableQuoteCard(option,e,byId,side){
   const record=e?byId.get(e.recordId):null;
@@ -333,7 +336,7 @@ function opinionStage(block,records){
     tableComposer(active),
     el('p',{class:'conversation-trust',text:'不替你做决定，只提供多角度的分析。'})
     ]),
-    button('补充适用条件',()=>{setAppView('zhihu');const board=document.querySelector('.full-board');if(board)board.open=true;$('forks-title')?.scrollIntoView({behavior:'smooth',block:'start'});},{class:'table-conditions'})
+    button('补充我的条件',()=>{setAppView('zhihu');const board=document.querySelector('.full-board');if(board)board.open=true;$('forks-title')?.scrollIntoView({behavior:'smooth',block:'start'});},{class:'table-conditions'})
   ]);
 }
 function pushbackChip(evidence,pb){
