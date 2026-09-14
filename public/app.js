@@ -358,7 +358,7 @@ function comparisonSections(block,records,sample){
       el('div',{class:'guide '+guidance.state,role:'status'},[
         el('h4',{text:guidance.title}),el('p',{text:guidance.message}),
         guidance.groups.length?el('div',{class:'guide-groups'},guidance.groups.map(group=>el('span',{class:'guide-pick '+sideOf(group.option)},[
-          el('strong',{text:group.option+'：'}),group.matches.map(m=>m.when).join('、')
+          el('strong',{text:group.option+'：'}),group.matches.map(m=>situationText({label:m.question},m)).join('、')
         ]))):null,
         guidance.picked.length&&canAsk?button('结合这些情况问知镜',()=>{
           openChat({focus:false});
