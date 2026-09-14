@@ -2,7 +2,8 @@
    Layout layer only; original evidence, account and discussion components remain. */
 :root{--bg:#fff;--wash:#F1F6FD;--ink-2:#47566E;--ink-3:#718099;--line:#E0E9F6;--line-2:#CFDBEF;--r:16px;--r-sm:10px;--rail:180px;}
 body,body[data-view="home"]{background:#fff;overflow-x:clip;}
-body .wrap,body[data-view="home"] .wrap,body[data-view="table"] .wrap{max-width:1600px;margin:0 auto;padding:30px 40px 64px calc(var(--rail) + 40px);min-height:100svh;}
+/* 侧栏固定贴左边；内容区不设总宽度上限，各页面自己的 max-width 负责在右侧区域居中。 */
+body .wrap,body[data-view="home"] .wrap,body[data-view="table"] .wrap{max-width:none;margin:0;padding:30px 40px 64px calc(var(--rail) + 40px);min-height:100svh;}
 body .global-nav,body[data-view="home"] .global-nav{position:fixed;inset:0 auto 0 0;width:var(--rail);padding:30px 16px 24px;display:flex;flex-direction:column;align-items:stretch;justify-content:space-between;margin:0;background:#F6F9FE;border-right:1px solid #EEF3FB;z-index:10;}
 .app-brand{display:flex;align-items:center;gap:7px;text-align:left;font:750 22px var(--sans);min-height:44px;white-space:nowrap;}
 .app-brand img{object-fit:contain;width:38px;height:44px;}
@@ -27,7 +28,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,t
   -webkit-mask-image:radial-gradient(closest-side ellipse at 52% 50%,#000 58%,transparent 100%);mask-image:radial-gradient(closest-side ellipse at 52% 50%,#000 58%,transparent 100%);}
 .welcome-brand{display:flex;align-items:center;gap:10px;margin-bottom:10px;color:var(--a);font-size:26px;font-weight:750;}
 .welcome-brand::before{content:"";width:30px;height:3px;border-radius:99px;background:var(--a);}
-.search-welcome h1{font-family:var(--serif);font-size:clamp(38px,3.7vw,56px);line-height:1.25;font-weight:800;letter-spacing:.015em;margin:0;}
+.search-welcome h1{font-family:var(--serif);font-size:clamp(36px,3.6vw,52px);line-height:1.25;font-weight:800;letter-spacing:.015em;margin:0;}
 .home-tagline{font-size:18px;font-weight:400;max-width:none;line-height:1.7;margin:14px 0 0;color:#66748C;letter-spacing:0;}
 .ask{display:block;position:relative;padding:20px 14px 12px 20px;border:1px solid #8EB4FF;border-radius:18px;background:#fff;box-shadow:0 8px 24px -12px #C8DCFA;}
 .ask:focus-within{border-color:var(--a);box-shadow:0 0 0 3px #EDF4FF;}
@@ -153,7 +154,6 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,t
 .welcome-features{margin-top:22px;}
 .welcome-features h3{font-size:17px;margin:0 0 8px;}
 .chat-launcher{background:var(--a);}
-@media(min-width:1600px){body .global-nav,body[data-view="home"] .global-nav{left:calc((100vw - 1600px)/2);} .primary-nav{left:calc((100vw - 1600px)/2 + 10px);}}
 @media(max-width:1190px) and (min-width:761px){:root{--rail:158px;}body .wrap,body[data-view="home"] .wrap,body[data-view="table"] .wrap{padding-left:calc(var(--rail) + 28px);padding-right:28px;}.opinion-stage{grid-template-columns:minmax(0,1fr) 240px;column-gap:12px;}.tone-seat{width:96px;}.seat-visual{width:96px;}.tone-seat .seat-chair{width:96px;}.tone-seat .seat-mascot{width:94px;height:104px;left:1px;}.table-center{inset:195px 10% auto;}.table-quote{padding:12px 10px;}.tone-name{font-size:10px;padding:3px 6px;}.seat-0{left:calc(50% - 48px);}.seat-1{left:calc(84% - 48px);}.seat-2{left:calc(96% - 48px);}.seat-3{left:calc(82% - 48px);}.seat-4{left:calc(50% - 48px);}.seat-5{left:calc(18% - 48px);}.seat-6{left:calc(4% - 48px);}.seat-7{left:calc(16% - 48px);}}
 @media(max-width:1020px){.opinion-stage{grid-template-columns:1fr;grid-template-rows:auto auto auto auto;}.table-conversation{grid-column:1;grid-row:3;min-height:210px;}.table-conditions{grid-row:4;}.table-response{flex-direction:row;padding:16px;}.table-response img{width:60px;height:66px;margin:0;}.table-response>div{padding:0;}.table-ask{padding-top:14px;}.mine-grid{grid-template-columns:1fr;}}
 @media(max-width:760px){
