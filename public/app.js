@@ -32,7 +32,7 @@ const toneById=id=>TONE_PERSONAS.find(t=>t.id===id)||TONE_PERSONAS[0];
 
 const session=createReadingSession();
 // activeReason 为 undefined 表示还没决定：宽屏默认展开第一条被评论区反驳的理由。
-const state={config:null,view:null,appView:'home',filter:'flagged',showAllForks:false,selectedForks:{},activeReason:undefined,openSources:new Set(),advisor:freshAdvisor(),chatOpen:undefined,tone:'rational',topicTab:'zhihu',userTopic:false,tableQuote:'a',tableReply:'',tableDraft:'',tableQuestion:'',tableThinking:false,tableListening:false,tableVoiceError:''};
+const state={config:null,view:null,appView:'home',filter:'flagged',showAllForks:false,selectedForks:{},activeReason:undefined,openSources:new Set(),advisor:freshAdvisor(),chatOpen:undefined,tone:'rational',topicTab:'zhihu',userTopic:false,scrollPos:{},tableQuote:'a',tableReply:'',tableDraft:'',tableQuestion:'',tableThinking:false,tableListening:false,tableVoiceError:''};
 // 登录账号与「知镜记住的情况」；没登录或没打开记住时，情况只存在这一页（localFacts）。
 const account={available:false,user:null,profile:null,note:''};
 const localFacts=[];
@@ -64,6 +64,8 @@ function viewFromLocation(){
   return APP_VIEWS.has(named)?named:(new URLSearchParams(location.search).has('q')?'zhihu':'home');
 }
 function setAppView(next,{sync=true}={}){
+  const prev=state.appView;
+  if(TOPIC_VIEWS.has(prev))state.scrollPos[prev]=scrollY;
   // 侧栏的「当前话题」回到这个话题上次停留的那一步。
   const wanted=next==='topic'?state.topicTab:next;
   const name=APP_VIEWS.has(wanted)?wanted:'home';
@@ -86,7 +88,9 @@ function setAppView(next,{sync=true}={}){
   if(name==='home'&&$('q').value===topicQuestion())$('q').value='';
   renderTopicChrome();
   renderAdvisor();
-  scrollTo({top:0,behavior:'smooth'});
+  // 同一话题的两种看法来回切，各自停在上次看到的位置；换到别的页面才回顶部。
+  const keep=TOPIC_VIEWS.has(prev)&&TOPIC_VIEWS.has(name)&&prev!==name;
+  scrollTo({top:keep?(state.scrollPos[name]||0):0,behavior:keep?'instant':'smooth'});
 }
 
 function normalizeQuestion(value){
@@ -259,6 +263,12 @@ function askFromTable(activeQuote,message=state.tableDraft){
   state.tableThinking=true;
   askAdvisor(question,{inlineTable:true,quote:activeQuote});
 }
+// 辩论：用户说出自己的倾向，知镜换成「反方挑战」的语气，只拿原话和评论区的反驳来挑战这个倾向，仍不替用户选。
+function debate(option,activeQuote){
+  if(state.advisor.pending)return;
+  state.tone='challenge';
+  askFromTable(activeQuote,`我现在更倾向「${option}」。请站在反方，用原话和评论区的反驳挑战我，帮我看清这个倾向站不站得住。`);
+}
 function startTableVoice(){
   const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SpeechRecognition){state.tableVoiceError='当前浏览器暂不支持语音输入，可以直接打字。';render();return;}
@@ -341,6 +351,7 @@ function opinionStage(block,records){
       ])
     ]),
     el('div',{class:'table-followups'},[el('h4',{text:'也可以问'}),...QUICK_ASKS.map(question=>button(question,()=>{state.tableDraft=question;render();requestAnimationFrame(()=>$('table-question')?.focus());},{class:'followup-question',disabled:state.advisor.pending}))]),
+    el('div',{class:'table-debate'},[el('h4',{text:'辩一辩：说出你的倾向，知镜站到对面'}),...block.options.map(option=>button(`我倾向「${option}」，你当反方`,()=>debate(option,active),{class:'followup-question debate-question',disabled:state.advisor.pending}))]),
     tableComposer(active),
     el('p',{class:'conversation-trust',text:'不替你做决定，只提供多角度的分析。'})
     ]),
@@ -1189,17 +1200,22 @@ function renderAdvisor(){
 }
 
 // ── 当前话题：一个问题从头到尾是一条线：两边原话 → 换个角度听 → 我的结论 ──
-const TOPIC_STEPS=[['zhihu','两边原话'],['table','换个角度听'],['summary','我的结论']];
+// 同一个话题的两种看法，在同一页上切换：知镜照出两边真实回答与评论；观点桌面把话题摆上桌深入讨论、辩论。
+// 「我的结论」不是第三种看法，是看完之后带走的出口。
+const TOPIC_MODES=[['zhihu','知镜 · 看两边','真实回答和评论，正反都在'],['table','观点桌面 · 深入讨论','追问、换角度，或让它当你的反方']];
 const topicQuestion=()=>{const d=session.get();return d?(d.meta?.question||d.topic?.title||''):'';};
 function topicBar(active){
   if(!session.get())return null;
   return el('div',{class:'topic-bar'},[
     el('div',{class:'topic-name'},[el('p',{class:'topic-kicker',text:'当前话题'}),el('h2',{class:'topic-title',text:topicQuestion()})]),
-    el('nav',{class:'topic-steps','aria-label':'这个话题的三步'},TOPIC_STEPS.map(([id,label],i)=>{
-      const step=button('',()=>setAppView(id),{class:'topic-step'+(id===active?' current':''),'aria-current':id===active?'step':null});
-      step.append(el('span',{class:'step-n',text:String(i+1)}),el('span',{text:label}));
-      return step;
-    }))
+    el('div',{class:'topic-actions'},[
+      el('div',{class:'topic-modes',role:'tablist','aria-label':'看这个话题的两种方式'},TOPIC_MODES.map(([id,label,hint])=>{
+        const mode=button('',()=>setAppView(id),{class:'topic-mode'+(id===active?' current':''),role:'tab','aria-selected':String(id===active),title:hint});
+        mode.append(el('strong',{text:label}),el('span',{text:hint}));
+        return mode;
+      })),
+      button('我的结论',()=>setAppView('summary'),{class:'topic-takeaway'+(active==='summary'?' current':''),'aria-current':active==='summary'?'page':null})
+    ])
   ]);
 }
 // 用户说过、选过的情况：观点桌面和「我的结论」都用它，和问知镜是同一份。

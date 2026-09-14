@@ -24,7 +24,8 @@ const STATIC_COPY={
 const EN_EXACT=new Map(Object.entries({
 "继续深造，还是尽早进入职场？":"Keep studying, or enter the workplace?","在大城市发展，还是回家乡生活？":"Build a life in a major city, or return home?","更稳定的选择，还是更大的发展空间？":"More stability, or more room to grow?","高薪和成长，哪个更重要？":"Higher pay or growth \u2014 what matters more?","同一个问题，多种视角。选择一个看法，让它换个角度说。":"One question, many perspectives. Choose a voice to explore it.","不替你做决定，只提供多角度的分析。":"Different perspectives. The decision remains yours.","让积累，成为新的视角":"A new perspective on what you save","登录知乎，查看你的收藏、创作与记住的情况。":"Sign in to explore your favorites, writing, and saved context.","检查收藏中的观点与评论区异议。":"Check saved opinions and reader objections.","回看自己的创作与读者反馈。":"Review your writing and reader feedback.","管理你确认过的个人情况与选择。":"Manage your confirmed context and choices.",
   '已保存的知乎原话 · 可核对来源':'Saved Zhihu quotes · Checkable sources',
-  '当前话题':'Current topic','这个话题的三步':'Three steps for this topic','两边原话':'Both sides','换个角度听':'Other angles','我的结论':'My takeaway',
+  '当前话题':'Current topic','这个话题的三步':'Three steps for this topic',
+  '知镜 · 看两边':'Zhijing · Both sides','真实回答和评论，正反都在':'Real answers and comments, pro and con','观点桌面 · 深入讨论':'Opinion Table · Go deeper','追问、换角度，或让它当你的反方':'Follow up, switch angles, or debate it','看这个话题的两种方式':'Two ways to look at this topic','辩一辩：说出你的倾向，知镜站到对面':'Debate: share your leaning and Zhijing takes the other side','两边原话':'Both sides','换个角度听':'Other angles','我的结论':'My takeaway',
   '继续上次的话题':'Continue your topic','带走这次梳理':'Take this review with you','还没有可以带走的结论':'No takeaway yet',
   '先在「两边原话」里跟知镜说说你的情况，让它对照一次原话。这里会整理出：你的情况、两边最相关的原话、还缺的信息，和可以先做的一步。':'Tell Zhijing about your situation under “Both sides” first and let it check the quotes once. This page will then collect your situation, the most relevant quotes, what is still unclear, and one next step.',
   '去跟知镜说说我的情况':'Tell Zhijing about my situation','我的情况':'My situation','这次没有说具体情况。':'No specific situation was shared this time.','真正要定的事':'What you are really deciding','对照原话得出的判断':'Judgments checked against quotes','评论区的反驳':'Pushback from the comments','还没弄清的':'Still unclear','处境相似的人怎么说':'What people in similar situations say',
@@ -82,6 +83,7 @@ const EN_EXACT=new Map(Object.entries({
 const EN_PATTERNS=[
   [/^已等待 (\d+) 秒$/,m=>`Waited ${m[1]} seconds`],
   [/^已说了 (\d+) 条情况$/,m=>`${m[1]} details shared`],
+  [/^我倾向「(.+)」，你当反方$/,m=>`I lean toward “${translateEnglish(m[1])}” — argue against me`],
   [/^和知镜聊了 (\d+) 轮$/,m=>`${m[1]} rounds with Zhijing`],
   [/^看完整对话（(\d+) 轮）$/,m=>`View full conversation (${m[1]})`],
   [/^看示例：(.*)$/,m=>`View example: ${m[1]}`],
