@@ -202,6 +202,7 @@ test('圆桌：按角色编号发给模型，自定义角色标明是用户设�
 
 test('辩论场：没有反驳就不算一轮；知镜站用户对面，带原话和追问',async()=>{
   assert.equal(verifyDebate({concede:'有道理'},catalog),null);
+  assert.equal(verifyDebate({concede:'你说得对，应届身份确实有用',rebuttal:'但它会过期'},catalog).concede,'应届身份确实有用','页面已有「你说得对的地方」，不重复');
   let seen=null;
   const out=await debateTurn({question:'q',side:0,message:'小公司成长快',history:[]},dataset,env,{chat:async({user})=>{
     seen=user;

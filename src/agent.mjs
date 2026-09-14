@@ -272,7 +272,7 @@ const ROUNDTABLE_PROMPT=[
   '规则：',
   '1. 输出 5-8 条发言，每位角色至少说一次；从第二条起，每条都要回应前面某一位（replyTo 写对方的角色编号），同意、补充或反驳都可以，要有来有回。',
   '2. 每条发言不超过 80 字，口语，符合该角色的立场和风格；用到原话或反驳时，把编号写进 evidence，正文里不要出现编号。',
-  '3. 不得编造数据、经历或原话里没有的事实；不给胜率、概率；角色可以为某一边辩护，但不能替用户做决定，不说「你应该选」。',
+  '3. 不得编造数据、经历或原话里没有的事实；所有角色（包括用户自定义的角色）都不许编造具体的人和事（比如某个邻居、同学的遭遇），要举例就引用原话；不给胜率、概率；角色可以为某一边辩护，但不能替用户做决定，不说「你应该选」。',
   '4. history 是之前的发言，user_says 是用户这次插的话；有的话，这一轮先回应用户，再接着讨论。',
   '5. 最后写 divergence：一句话（不超过 60 字）说清这几位真正的分歧在哪（通常是看重的东西不同，或默认的前提不同）。',
   '只输出 JSON：{"turns":[{"role":"r1","text":"……","evidence":["e3"],"replyTo":null}],"divergence":"……"}'
@@ -338,7 +338,9 @@ export async function roundtableTurn(input,dataset,env=process.env,{chat=chatJSO
 export function verifyDebate(parsed,catalog){
   const rebuttal=cleanText(parsed?.rebuttal,160);
   if(!rebuttal)return null;
-  return {concede:cleanText(parsed?.concede,60)||'',rebuttal,refs:refIds(parsed?.evidence,catalog,3),question:cleanText(parsed?.question,60)||''};
+  // 页面上已经写了「你说得对的地方：」，模型自己开头的「你说得对」「没错」去掉，免得重复。
+  const concede=(cleanText(parsed?.concede,60)||'').replace(/^(你说得对|说得对|没错|确实如此|的确)[，,：:。\s]*/,'');
+  return {concede,rebuttal,refs:refIds(parsed?.evidence,catalog,3),question:cleanText(parsed?.question,60)||''};
 }
 export async function debateTurn(input,dataset,env=process.env,{chat=chatJSON,request=getJSON,signal=AbortSignal.timeout(60000)}={}){
   const catalog=buildCatalog(dataset);
