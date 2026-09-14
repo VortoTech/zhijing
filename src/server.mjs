@@ -23,7 +23,19 @@ const FILES={
   '/advisor.js':['public/advisor.js','text/javascript; charset=utf-8'],
   '/engine.js':['src/engine.mjs','text/javascript; charset=utf-8'],
   '/session.js':['public/session.js','text/javascript; charset=utf-8'],
-  '/style.css':['public/style.css','text/css; charset=utf-8']
+  '/style.css':['public/style.css','text/css; charset=utf-8'],
+  '/assets/home/hero-telescope-v1.png':['public/assets/home/hero-telescope-v1.png','image/png'],
+  '/assets/tone-hosts/rational.png':['public/assets/tone-hosts/rational.png','image/png'],
+  '/assets/tone-hosts/sharp.png':['public/assets/tone-hosts/sharp.png','image/png'],
+  '/assets/tone-hosts/empathy.png':['public/assets/tone-hosts/empathy.png','image/png'],
+  '/assets/tone-hosts/humor.png':['public/assets/tone-hosts/humor.png','image/png'],
+  '/assets/tone-hosts/realist.png':['public/assets/tone-hosts/realist.png','image/png'],
+  '/assets/tone-hosts/longterm.png':['public/assets/tone-hosts/longterm.png','image/png'],
+  '/assets/tone-hosts/challenge.png':['public/assets/tone-hosts/challenge.png','image/png'],
+  '/assets/tone-hosts/socratic.png':['public/assets/tone-hosts/socratic.png','image/png'],
+  '/assets/table/chair.png':['public/assets/table/chair.png','image/png'],
+  '/assets/table/chair-ring.png':['public/assets/table/chair-ring.png','image/png'],
+  '/assets/table/tabletop.png':['public/assets/table/tabletop.png','image/png']
 };
 
 const CSP="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://*.zhimg.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";

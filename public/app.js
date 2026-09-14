@@ -13,16 +13,28 @@ const isSaved=question=>EXAMPLES.some(e=>e.saved&&e.question===question);
 // 默认只列出前几个分叉条件，其余按需展开。
 const MAX_FORKS=3;
 
+const TONE_PERSONAS=[
+  {id:'rational',label:'理性分析',asset:'/assets/tone-hosts/rational.png',prompt:'请用理性、克制、分点清晰的语气回应',preview:'把情绪先放一边：这句话只在你能承担波动时成立。'},
+  {id:'sharp',label:'犀利反问',asset:'/assets/tone-hosts/sharp.png',prompt:'请用犀利但不刻薄的反问语气回应',preview:'如果平台只给名头、不给成长，它凭什么就是更好的选择？'},
+  {id:'empathy',label:'温柔共情',asset:'/assets/tone-hosts/empathy.png',prompt:'请用温柔共情、先接住情绪的语气回应',preview:'你担心选错很正常，先确认哪一种后悔是你更能承受的。'},
+  {id:'humor',label:'幽默解构',asset:'/assets/tone-hosts/humor.png',prompt:'请用轻松幽默但不油滑的语气回应',preview:'高薪像过山车，低薪大厂像地铁：一个刺激，一个也可能坐过站。'},
+  {id:'realist',label:'现实主义',asset:'/assets/tone-hosts/realist.png',prompt:'请用务实、具体、重视约束条件的语气回应',preview:'先算三件事：现金流、岗位核心度，以及六个月后的可替代性。'},
+  {id:'longterm',label:'长期主义',asset:'/assets/tone-hosts/longterm.png',prompt:'请用长期主义、关注能力复利的语气回应',preview:'别只看第一年，把三年后的能力复利也一起放进来。'},
+  {id:'challenge',label:'反方挑战',asset:'/assets/tone-hosts/challenge.png',prompt:'请站在反方挑战我，但必须基于现有原话和评论区反驳',preview:'如果大厂只是更大的螺丝钉，所谓平台真的值得用成长速度去换吗？'},
+  {id:'socratic',label:'苏格拉底追问',asset:'/assets/tone-hosts/socratic.png',prompt:'请用苏格拉底式追问，不直接给结论',preview:'你说想要稳定——真正害怕的是收入波动，还是选择不被认可？'}
+];
+const toneById=id=>TONE_PERSONAS.find(t=>t.id===id)||TONE_PERSONAS[6];
+
 const session=createReadingSession();
 // activeReason 为 undefined 表示还没决定：宽屏默认展开第一条被评论区反驳的理由。
-const state={config:null,view:null,filter:'flagged',showAllForks:false,selectedForks:{},activeReason:undefined,openSources:new Set(),advisor:freshAdvisor(),chatOpen:undefined};
+const state={config:null,view:null,appView:'home',filter:'flagged',showAllForks:false,selectedForks:{},activeReason:undefined,openSources:new Set(),advisor:freshAdvisor(),chatOpen:false,tone:'challenge',tableQuote:'a',tableReply:'',tableDraft:'',tableQuestion:'',tableThinking:false,tableListening:false,tableVoiceError:''};
 // 登录账号与「知镜记住的情况」；没登录或没打开记住时，情况只存在这一页（localFacts）。
 const account={available:false,user:null,profile:null};
 const localFacts=[];
 let localSeq=0,boardById=new Map();
 const NO_PB={of:()=>[]};
 function freshAdvisor(){return {turns:[],pending:false,draft:'',refocus:false};}
-let openCards=null,ticker=null;
+let openCards=null,ticker=null,tableThinkTimer=null,speechRecognition=null;
 const $=id=>document.getElementById(id);
 function el(tag,props={},children=[]){
   const node=document.createElement(tag);
@@ -38,6 +50,27 @@ const clear=node=>node.replaceChildren();
 const button=(text,action,props={})=>{const b=el('button',{type:'button',text,...props});b.addEventListener('click',action);return b;};
 const cleanTitle=title=>title.replace(/\s*-\s*知乎$/,'');
 
+const APP_VIEWS=new Set(['home','table','zhihu']);
+function viewFromLocation(){
+  const named=location.hash.replace(/^#/,'');
+  return APP_VIEWS.has(named)?named:(new URLSearchParams(location.search).has('q')?'zhihu':'home');
+}
+function setAppView(next,{sync=true}={}){
+  const name=APP_VIEWS.has(next)?next:'home';
+  state.appView=name;
+  $('home-view').hidden=name!=='home';
+  $('table-view').hidden=name!=='table';
+  $('zhihu-view').hidden=name!=='zhihu';
+  document.body.dataset.view=name;
+  if(sync){
+    const url=new URL(location.href);
+    url.hash=name==='home'?'':name;
+    history.pushState({appView:name},'',url);
+  }
+  renderAdvisor();
+  scrollTo({top:0,behavior:'smooth'});
+}
+
 function normalizeQuestion(value){
   const question=value.trim().replace(/\s+/g,' ');
   if(question.length<4)throw new Error('多写几个字，比如「考研还是直接工作」。');
@@ -51,7 +84,7 @@ function viewFor(question){
 }
 
 function clearResults(){
-  for(const id of ['result-head','compare','advisor','sources-summary','sources-note','list','list-bar','diag-slot','source-note'])clear($(id));
+  for(const id of ['result-head','compare','table-result-head','table-stage','advisor','sources-summary','sources-note','list','list-bar','diag-slot','source-note'])clear($(id));
   for(const id of ['sources','data-details']){$(id).hidden=true;$(id).open=false;}
   $('advisor').hidden=true;$('chat-launcher').hidden=true;document.body.classList.remove('chat-open');
 }
@@ -96,7 +129,8 @@ function markExamples(){
 
 async function load(view,refresh=false){
   state.view=view;state.filter='flagged';state.showAllForks=false;state.selectedForks={};state.activeReason=undefined;
-  state.openSources=new Set();state.advisor=freshAdvisor();
+  state.openSources=new Set();state.advisor=freshAdvisor();state.tableQuote='a';state.tableReply='';state.tableDraft='';state.tableQuestion='';state.tableThinking=false;state.tableVoiceError='';
+  clearTimeout(tableThinkTimer);tableThinkTimer=null;
   $('q').value=view.question;$('ask-note').textContent='';
   syncUrl(view);markExamples();
   const live=view.kind==='ask';
@@ -157,6 +191,132 @@ function assignPushback(block,byId){
     }
   }
   return {of:e=>assigned.get(e)||[],total:used.size};
+}
+
+function firstTableQuote(block,sideIndex){
+  const side=block?.sides?.find(item=>item.option===block.options?.[sideIndex]);
+  return side?.reasons?.flatMap(reason=>reason.evidence||[])[0]||null;
+}
+function tableQuoteCard(option,e,byId,side){
+  const record=e?byId.get(e.recordId):null;
+  const selected=state.tableQuote===side;
+  const node=el('article',{class:'table-quote '+side+(selected?' selected':''),tabindex:'0',role:'button','aria-pressed':String(selected),'data-table-quote':side},[
+    el('p',{class:'table-quote-side',text:'知乎 · 观点 '+side.toUpperCase()}),
+    el('h4',{text:'“'+(e?.text||`关于「${option}」的原话暂时缺席`)+'”'}),
+    el('p',{class:'table-quote-meta',text:record?`${record.author||'匿名用户'} · ${record.voteUp??'—'} 赞`:'等待更多原话'})
+  ]);
+  const select=()=>{state.tableQuote=side;state.tableReply='';render();requestAnimationFrame(()=>document.querySelector(`[data-table-quote="${side}"]`)?.focus());};
+  node.addEventListener('click',select);
+  node.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();select();}});
+  return node;
+}
+function finishLocalTableReply(){
+  state.tableThinking=false;
+  state.tableReply=toneById(state.tone).preview;
+  render();
+  requestAnimationFrame(()=>$('table-question')?.focus());
+}
+function askFromTable(activeQuote,message=state.tableDraft){
+  const question=message.trim();
+  if(!question){$('table-question')?.focus();return;}
+  clearTimeout(tableThinkTimer);
+  state.tableQuestion=question;state.tableDraft='';state.tableReply='';state.tableThinking=true;state.tableVoiceError='';
+  render();
+  const quote=activeQuote?.text?.length>90?activeQuote.text.slice(0,90)+'…':activeQuote?.text||'我刚选中的这条观点';
+  tableThinkTimer=setTimeout(()=>{
+    tableThinkTimer=null;
+    if(state.config?.adviceReady)askAdvisor(`我继续追问：「${question}」请围绕「${quote}」并结合桌面两边原话回答。`,{inlineTable:true});
+    else finishLocalTableReply();
+  },1100);
+}
+function startTableVoice(){
+  const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SpeechRecognition){state.tableVoiceError='当前浏览器暂不支持语音输入，可以直接打字。';render();return;}
+  if(state.tableListening&&speechRecognition){speechRecognition.stop();return;}
+  const recognition=new SpeechRecognition();
+  speechRecognition=recognition;recognition.lang='zh-CN';recognition.interimResults=true;recognition.continuous=false;
+  state.tableListening=true;state.tableVoiceError='';render();
+  recognition.onresult=event=>{
+    state.tableDraft=Array.from(event.results).map(result=>result[0].transcript).join('');
+    render();requestAnimationFrame(()=>$('table-question')?.focus());
+  };
+  recognition.onerror=()=>{state.tableVoiceError='没有听清，可以再试一次或直接打字。';};
+  recognition.onend=()=>{if(speechRecognition===recognition)speechRecognition=null;state.tableListening=false;render();requestAnimationFrame(()=>$('table-question')?.focus());};
+  try{recognition.start();}catch{state.tableListening=false;state.tableVoiceError='语音输入没有启动，请稍后再试。';render();}
+}
+function tableComposer(activeQuote){
+  const input=el('input',{id:'table-question',type:'text',maxlength:'120',autocomplete:'off',enterkeyhint:'send',placeholder:'继续追问，比如：如果我更怕三年后后悔呢？'});
+  input.value=state.tableDraft;
+  input.addEventListener('input',()=>{state.tableDraft=input.value;});
+  const form=el('form',{class:'table-composer'},[
+    el('label',{for:'table-question',class:'sr-only',text:'继续追问'}),
+    input,
+    button(state.tableListening?'停止':'语音',startTableVoice,{class:'table-voice','aria-pressed':String(state.tableListening),disabled:state.tableThinking}),
+    el('button',{type:'submit',class:'table-send',disabled:state.tableThinking,text:state.tableThinking?'思考中':'发送'})
+  ]);
+  form.addEventListener('submit',event=>{event.preventDefault();askFromTable(activeQuote,input.value);});
+  return el('div',{class:'table-ask'},[
+    form,
+    el('p',{class:'table-ask-hint',text:state.tableVoiceError||(state.tableListening?'正在听你说…':'可打字，也可用语音输入 · Enter 发送')})
+  ]);
+}
+function opinionStage(block,records){
+  if(block?.status!=='complete'||!block.options?.length)return null;
+  const byId=new Map(records.map(r=>[r.id,r]));
+  const pb=assignPushback(block,byId);
+  const quotes=[firstTableQuote(block,0),firstTableQuote(block,1)];
+  const active=quotes[state.tableQuote==='b'?1:0]||quotes.find(Boolean);
+  let objection=null;
+  for(const e of evidenceOf(block)){
+    const found=pb.of(e)[0];
+    if(found){objection=found;break;}
+  }
+  const seats=TONE_PERSONAS.map((tone,index)=>{
+    const selected=tone.id===state.tone;
+    const seat=el('button',{type:'button',class:'tone-seat seat-'+index+(selected?' selected':'')+(state.tableThinking?' thinking':''),'aria-pressed':String(selected),'data-tone':tone.id,title:'用'+tone.label+'的方式说'},[
+      state.tableThinking?el('span',{class:'seat-thought','aria-hidden':'true'},[el('i'),el('i'),el('i')]):null,
+      el('span',{class:'seat-visual','aria-hidden':'true'},[
+        el('img',{class:'seat-chair',src:'/assets/table/chair.png',alt:'',width:'180',height:'180'}),
+        el('img',{class:'seat-mascot',src:tone.asset,alt:'',width:'168',height:'168'})
+      ]),
+      el('span',{class:'tone-name',text:tone.label})
+    ]);
+    seat.addEventListener('click',()=>{state.tone=tone.id;state.tableReply=tone.preview;render();requestAnimationFrame(()=>document.querySelector(`[data-tone="${tone.id}"]`)?.focus());});
+    return seat;
+  });
+  const speech=state.tableThinking?'8 个看山正在从不同角度想…':state.tableReply||toneById(state.tone).preview;
+  return el('section',{class:'opinion-stage','aria-labelledby':'table-title'},[
+    el('div',{class:'stage-heading'},[
+      el('div',{},[
+        el('p',{class:'stage-kicker',text:'观点桌面 · 问知镜'}),
+        el('h3',{id:'table-title',text:'同一句话，换个角度听。'}),
+        el('p',{text:'选一个看山，让它换个语气说。'})
+      ]),
+      el('p',{class:'stage-trust',text:'AI 演绎，不替你做决定'})
+    ]),
+    el('div',{class:'opinion-table'},[
+      el('img',{class:'chair-ring',src:'/assets/table/chair-ring.png',alt:'',width:'1496',height:'1051','aria-hidden':'true'}),
+      el('img',{class:'tabletop-layer',src:'/assets/table/tabletop.png',alt:'',width:'1634',height:'847','aria-hidden':'true'}),
+      el('div',{class:'table-center'},[
+        tableQuoteCard(block.options[0],quotes[0],byId,'a'),
+        tableQuoteCard(block.options[1],quotes[1],byId,'b'),
+        objection?el('aside',{class:'table-objection'},[
+          el('span',{text:'评论 · 有人反驳'}),
+          el('p',{text:'“'+objection.commentText+'”'})
+        ]):null
+      ]),
+      ...seats
+    ]),
+    el('div',{class:'table-response'+(state.tableThinking?' thinking':''),'aria-live':'polite'},[
+      el('img',{src:toneById(state.tone).asset,alt:'',width:'52',height:'52'}),
+      el('div',{},[
+        el('p',{class:'response-label',text:toneById(state.tone).label+' · 知镜'}),
+        state.tableQuestion?el('p',{class:'response-question',text:'你问：'+state.tableQuestion}):null,
+        el('p',{text:speech})
+      ])
+    ]),
+    tableComposer(active)
+  ]);
 }
 function pushbackChip(evidence,pb){
   const all=evidence.flatMap(e=>pb.of(e));
@@ -392,7 +552,11 @@ function comparisonSections(block,records,sample){
       rest>0?button('再看 '+rest+' 个条件',()=>{state.showAllForks=true;render();},{class:'more-forks'}):null
     ]));
   }
-  return [el('div',{class:'board'},parts)];
+  const full=el('details',{class:'full-board',open:true},[
+    el('summary',{text:'展开完整对照与个人条件'}),
+    el('div',{class:'board'},parts)
+  ]);
+  return [full];
 }
 
 function context(record,target){
@@ -479,6 +643,13 @@ function render(){
   }
   $('result-head').replaceChildren(...head);
   $('compare').replaceChildren(...comparisonSections(comparison,data.records,sample));
+  $('table-result-head').replaceChildren(
+    el('span',{class:'table-topic-kicker',text:'正在讨论'}),
+    el('strong',{text:data.meta.question||data.topic.title}),
+    button('换一个话题',()=>setAppView('zhihu'),{class:'switch-view compact'})
+  );
+  const table=opinionStage(comparison,data.records);
+  $('table-stage').replaceChildren(table||el('div',{class:'board-empty',text:'这个话题暂时还没有可以摆上桌的双边观点。'}));
 
   $('sources-summary').textContent=`原始回答与评论区 · ${focused.length} 条`+(flagged.length?`（${flagged.length} 条被读者反驳）`:'');
   $('sources-note').replaceChildren(
@@ -676,13 +847,21 @@ async function chatRequest(path,body,turn,onOk){
   advisor.pending=false;
   render();
 }
-function askAdvisor(message){
+async function askAdvisor(message,{inlineTable=false}={}){
   const view=state.view,advisor=state.advisor;
   if(!view||advisor.pending||!state.config?.adviceReady||!message)return;
+  const tone=toneById(state.tone);
   const history=advisor.turns.filter(t=>t.kind==='advice').slice(-3)
     .flatMap(t=>[{role:'user',text:t.message},t.reply?{role:'assistant',text:turnSummary(t.reply)}:null]).filter(Boolean);
   const turn={kind:'advice',message,reply:null,error:''};
-  return chatRequest('/api/advice',{ref:viewRef(view),selections:selectionsOf(),facts:factsOf(),history,message},turn,data=>{turn.reply=data;});
+  const styledMessage=`${tone.prompt}。保持知镜“不替用户做决定、只依据原话”的边界。\n${message}`;
+  await chatRequest('/api/advice',{ref:viewRef(view),selections:selectionsOf(),facts:factsOf(),history,message:styledMessage,tone:tone.id},turn,data=>{turn.reply=data;});
+  if(inlineTable){
+    state.tableThinking=false;
+    state.tableReply=turn.reply?turnSummary(turn.reply):tone.preview;
+    if(turn.error)state.tableVoiceError=turn.error;
+    render();requestAnimationFrame(()=>$('table-question')?.focus());
+  }
 }
 function findPeersFor(){
   const view=state.view,advisor=state.advisor;
@@ -752,8 +931,9 @@ const pointItem=p=>el('li',{},[
 ]);
 
 // 气泡
+const toneAvatar=(cls='')=>el('img',{class:'tone-avatar '+cls,src:toneById(state.tone).asset,alt:'',width:'36',height:'36'});
 const botMsg=(children,cls='')=>el('div',{class:'msg bot '+cls},[
-  el('span',{class:'msg-avatar','aria-hidden':'true',text:'镜'}),
+  toneAvatar(),
   el('div',{class:'msg-bubble'},[el('span',{class:'sr-only',text:'知镜：'}),...children])
 ]);
 const userMsg=text=>el('div',{class:'msg user'},[el('div',{class:'msg-bubble'},[el('span',{class:'sr-only',text:'你：'}),text])]);
@@ -918,20 +1098,20 @@ function composer(){
 function renderAdvisor(){
   const box=$('advisor'),launcher=$('chat-launcher');
   const block=session.get()?.comparison;
-  if(block?.status!=='complete'||!block.options?.length||!state.config?.adviceReady){
+  if(state.appView!=='zhihu'||block?.status!=='complete'||!block.options?.length||!state.config?.adviceReady){
     box.hidden=true;launcher.hidden=true;clear(box);document.body.classList.remove('chat-open');return;
   }
   if(state.chatOpen===undefined)state.chatOpen=wideChat();
   const open=!!state.chatOpen;
   launcher.hidden=open;box.hidden=!open;
   document.body.classList.toggle('chat-open',open);
-  launcher.replaceChildren(...[el('span',{class:'msg-avatar','aria-hidden':'true',text:'镜'}),el('span',{text:'问知镜'}),
+  launcher.replaceChildren(...[toneAvatar('launcher-avatar'),el('span',{text:'问知镜 · '+toneById(state.tone).label}),
     state.advisor.turns.length?el('span',{class:'launcher-dot',title:'有进行中的对话'}):null].filter(Boolean));
   if(!open){clear(box);return;}
   const advisor=state.advisor;
   const head=el('header',{class:'chat-head'},[
-    el('span',{class:'msg-avatar big','aria-hidden':'true',text:'镜'}),
-    el('div',{class:'chat-titles'},[el('h3',{id:'advisor-title',class:'chat-title',text:'问知镜'}),el('p',{class:'chat-sub',text:'不给胜率，不替你选'})]),
+    toneAvatar('big'),
+    el('div',{class:'chat-titles'},[el('h3',{id:'advisor-title',class:'chat-title',text:'问知镜 · '+toneById(state.tone).label}),el('p',{class:'chat-sub',text:'不给胜率，不替你选'})]),
     advisor.turns.length?button('重新开始',restartChat,{class:'link-btn chat-restart',disabled:advisor.pending}):null,
     button('收起',closeChat,{class:'chat-close','aria-label':'收起问知镜',title:'收起'})
   ]);
@@ -969,6 +1149,33 @@ $('ask-form').addEventListener('submit',event=>{
   if(view.kind==='ask'&&!state.config?.askReady&&!isSaved(question)){$('ask-note').textContent='实时检索暂未开放，可以先看看示例。';return;}
   load(view);
 });
+$('brand-home')?.addEventListener('click',()=>setAppView('home'));
+$('enter-table')?.addEventListener('click',()=>setAppView('table'));
+$('enter-zhihu').addEventListener('click',()=>setAppView('zhihu'));
+$('go-table').addEventListener('click',()=>setAppView('table'));
+$('go-zhihu').addEventListener('click',()=>setAppView('zhihu'));
+for(const back of document.querySelectorAll('.back-home'))back.addEventListener('click',()=>setAppView('home'));
+window.addEventListener('popstate',()=>setAppView(viewFromLocation(),{sync:false}));
+
+const HOME_LANG={
+  zh:{eyebrow:'知乎观点体验空间',title:'看山啊',tagline:'撕开共识，看看真实的人正在怎样讨论同一个问题。',start:'开始体验',proof:'真人原话　·　真实评论　·　真实分歧',button:'中 / EN',label:'切换为英文'},
+  en:{eyebrow:'A SPACE FOR REAL OPINIONS',title:'SEE BEYOND',tagline:'Tear open consensus and see how real people discuss the same question.',start:'START',proof:'REAL VOICES · REAL COMMENTS · REAL DIFFERENCES',button:'EN / 中',label:'Switch to Chinese'}
+};
+let homeLanguage='zh';
+function renderHomeLanguage(){
+  const copy=HOME_LANG[homeLanguage];
+  $('home-eyebrow-text').textContent=copy.eyebrow;
+  $('home-title').textContent=copy.title;
+  $('home-tagline').textContent=copy.tagline;
+  $('home-start-label').textContent=copy.start;
+  $('home-proof-text').textContent=copy.proof;
+  $('language-toggle').textContent=copy.button;
+  $('language-toggle').setAttribute('aria-label',copy.label);
+  $('language-toggle').setAttribute('aria-pressed',String(homeLanguage==='en'));
+  document.documentElement.lang=homeLanguage==='en'?'en':'zh-CN';
+}
+$('language-toggle').addEventListener('click',()=>{homeLanguage=homeLanguage==='zh'?'en':'zh';renderHomeLanguage();});
+renderHomeLanguage();
 
 // ── 知乎登录：没配置凭据时不显示；OAuth token 只在服务端，浏览器只拿到昵称和头像 ──
 function renderAccount(me,note=''){
@@ -977,7 +1184,10 @@ function renderAccount(me,note=''){
   account.user=me?.user||null;
   account.profile=null;
   if(!account.user)localFacts.length=0;
-  if(!me?.available){clear(box);renderAdvisor();return;}
+  if(!me?.available){
+    box.replaceChildren(el('button',{type:'button',class:'login-btn unavailable',text:'知乎登录',disabled:true,title:'当前演示环境暂未配置知乎授权'}));
+    renderAdvisor();return;
+  }
   const parts=[];
   if(me.user){
     if(me.user.avatar)parts.push(el('img',{class:'avatar',src:me.user.avatar,alt:'',width:24,height:24,referrerpolicy:'no-referrer'}));
@@ -987,7 +1197,7 @@ function renderAccount(me,note=''){
       renderAccount({available:true,user:null},'已退出。');
     },{class:'link-btn'}));
   }else{
-    parts.push(el('a',{class:'login-btn',href:'/auth/login',text:'用知乎登录'}));
+    parts.push(el('a',{class:'login-btn',href:'/auth/login',text:'知乎登录'}));
   }
   if(note)parts.unshift(el('span',{class:'account-note',text:note}));
   box.replaceChildren(...parts);
@@ -1107,6 +1317,7 @@ async function boot(){
   if(q){
     try{const view=viewFor(normalizeQuestion(q));if(view.kind==='sample'||state.config.askReady||isSaved(view.question))initial=view;}catch{}
   }
+  setAppView(viewFromLocation(),{sync:false});
   load(initial);
 }
 boot();
