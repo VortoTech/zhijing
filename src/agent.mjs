@@ -35,6 +35,7 @@ const ADVISOR_PROMPT=[
   '6. 材料回答不了、但去知乎再搜一次可能找到答案的关键问题，把搜索词写进 search（不超过 16 字）；否则 search 写空字符串。',
   '7. 用户这次的话里如果透露了关于他自己的新情况（不是关于某个选项的信息，比如「小公司多给五千」不算），放进 fact_proposals：key 从 stage/finance/city/timeline/risk/priority/dealbreaker/other 里选，value 不超过 16 字，quote 必须是 message 里连续的一段，逐字复制。',
   '8. next_question 只问一个最能减少不确定性的问题，options 给 2-4 个短选项（每个不超过 12 字），用户可以直接点。',
+  '9. 这是聊天：所有文字都直接对用户说话，用「你」称呼他，不要写「用户」；口吻像当面聊，简短、具体。',
   '',
   '只输出 JSON：{"understanding":"一两句复述用户的处境和真正要决定的事，不超过 80 字",',
   '"points":[{"text":"关键判断，不超过 50 字","evidence":["e3","p1"]}],',
