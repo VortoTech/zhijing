@@ -303,12 +303,17 @@ function refIds(value,catalog,max){
 }
 const resolveRef=(catalog,id)=>{const item=catalog.items.get(id);return item.type==='evidence'?{id,ref:'evidence',...item.evidence}:{id,ref:'pushback',...item.pushback};};
 
+// 提示词拦不住模型编「隔壁小王」：点名具体的人和事的分句删掉，其余照留；删完没话了就整条不要。
+const ANECDOTE=/隔壁|邻居|[小老][王李张刘陈赵]|我的?(同学|朋友|表哥|表姐|表弟|表妹|同事|室友|亲戚)|我(认识|身边)的/;
+const dropAnecdotes=text=>(text.match(/[^，,。！？；!?;]+[，,。！？；!?;]?/g)||[])
+  .filter(clause=>!ANECDOTE.test(clause)).join('').replace(/[，,；;]$/,'。').trim();
+
 // roles：[{key:'r1',id,name,stance}]。只收认识的角色；回应对象换成角色名。
 export function verifyRoundtable(parsed,catalog,roles){
   const byKey=new Map(roles.map(r=>[r.key,r]));
   const turns=[];
   for(const turn of list(parsed?.turns)){
-    const role=byKey.get(turn?.role),text=cleanText(turn?.text,120);
+    const role=byKey.get(turn?.role),raw=cleanText(turn?.text,120),text=raw&&dropAnecdotes(raw);
     if(!role||!text)continue;
     turns.push({role:{id:role.id,name:role.name},text,refs:refIds(turn.evidence,catalog,2),replyTo:byKey.get(turn.replyTo)?.name||null});
     if(turns.length>=8)break;

@@ -186,6 +186,11 @@ test('圆桌：只收认识的角色和存在的编号，正文删编号、拦�
   assert.equal(out.turns[0].refs.length,1,'不存在的编号丢掉');
   assert.equal(out.turns[1].replyTo,'理性分析');
   assert.equal(out.divergence,'分歧在于看重成长还是稳定');
+  const told=verifyRoundtable({turns:[
+    {role:'r2',text:'孩子，稳定最重要。考研能进好单位，以后铁饭碗，别像隔壁小王那样瞎折腾。'},
+    {role:'r2',text:'隔壁小王就是这样被裁的。'}
+  ]},catalog,roles);
+  assert.deepEqual(told.turns.map(t=>t.text),['孩子，稳定最重要。考研能进好单位，以后铁饭碗。'],'编出来的具体人和事删掉，其余照留；只剩故事的整条不要');
 });
 
 test('圆桌：按角色编号发给模型，自定义角色标明是用户设定；结果带回原话',async()=>{
