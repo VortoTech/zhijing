@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {peerQueries,findPeers,isSelfAccount,leanSupported} from '../src/peers.mjs';
+import {peerQueries,findPeers,isSelfAccount} from '../src/peers.mjs';
 import {createServer} from '../src/server.mjs';
 
 const env={AI_BASE_URL:'https://example.invalid',AI_API_KEY:'k',AI_MODEL:'m',ZHIJING_ENABLE_PILOT:'1'};
@@ -35,15 +35,7 @@ test('自述：讲自己经历的才算，只有「我觉得 / 我建议」的�
   assert.equal(isSelfAccount('我觉得我当时选错了'),true);
 });
 
-test('倾向：原话里提到这一边、没提另一边才保留',()=>{
-  assert.equal(leanSupported('低薪大厂',['我会优先选大厂稳定岗位。'],options),true);
-  assert.equal(leanSupported('高薪小公司',['杭州那家小企业，我并不是很想去。'],options),false,'没提到这一边');
-  assert.equal(leanSupported('低薪大厂',['交个房租就把存的钱用了一大部分。'],options),false);
-  assert.equal(leanSupported('低薪大厂',['小公司和大厂我都待过。'],options),false,'两边都提到，看不出倾向');
-  assert.equal(leanSupported('随便',['大厂'],options),false);
-});
-
-test('找同路人：只收同一说话人的原话；已在对照里的回答不重复；选项之外的倾向不收',async()=>{
+test('找同路人：只收同一说话人的原话；已在对照里的回答不重复；不标倾向',async()=>{
   const queries=[];
   let seen;
   const chat=async({user})=>{
@@ -69,10 +61,10 @@ test('找同路人：只收同一说话人的原话；已在对照里的回答�
   const [first,second]=out.peers;
   assert.equal(first.who,'我毕业那年在杭州，每月房租两千五。');
   assert.deepEqual(first.said,['最后去了小公司，工资多四千。','一年后公司裁员，我又跳去了大厂。'],'评论不是同一说话人，不收');
-  assert.equal(first.lean,null,'原话里小公司、大厂都提到了，倾向不保留');
+  assert.equal('lean' in first,false,'倾向容易标反，不输出');
   assert.deepEqual(first.source,{recordId:'n1',commentIndex:null,fromDataset:false,title:'在杭州租房的应届生怎么选工作',author:'乙',voteUp:30,url:'https://www.zhihu.com/question/2/answer/2'});
   assert.equal(first.situation.value,'要自己付房租');
-  assert.deepEqual([second.kind,second.source.fromDataset,second.source.commentIndex,second.lean,second.said],['comment',true,0,null,[]]);
+  assert.deepEqual([second.kind,second.source.fromDataset,second.source.commentIndex,second.said],['comment',true,0,[]]);
   assert.ok(out.dropped>=3);
 });
 
@@ -108,7 +100,7 @@ const post=(base,body)=>fetch(base+'/api/peers',{method:'POST',headers:{'content
 
 test('同路人接口：没有情况 400；情况 = 用户说的 + 选的条件（最多 3 条）；找到人的结果 15 分钟内复用，没找到的不缓存',async()=>{
   const inputs=[];
-  const found={situation:{id:'f0',label:'经济状况',value:'要自己付房租'},similar:'同样',lean:null,kind:'comment',who:'我也是',said:[],source:{fromDataset:true}};
+  const found={situation:{id:'f0',label:'经济状况',value:'要自己付房租'},similar:'同样',kind:'comment',who:'我也是',said:[],source:{fromDataset:true}};
   const deps={findPeers:async input=>{inputs.push(input);return {queries:['q'],peers:inputs.length>=3?[found]:[],searched:0,failed:0,quota:false,dropped:2};}};
   await serve(createServer(env,deps),async base=>{
     assert.equal((await post(base,{ref:{kind:'sample',topicId:'first-job'}})).status,400);

@@ -768,8 +768,7 @@ async function findPeersFor(){
   renderAdvisor();
   $('advisor').querySelector('.peers')?.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
-function peerCard(peer,block){
-  const [,B]=block.options;
+function peerCard(peer){
   const src=peer.source;
   const record=src.fromDataset?boardById.get(src.recordId):null;
   const who=src.author||'匿名用户';
@@ -778,8 +777,7 @@ function peerCard(peer,block){
   return el('article',{class:'peer'},[
     el('div',{class:'peer-top'},[
       el('span',{class:'peer-match',text:peer.similar}),
-      peer.lean?el('span',{class:'peer-lean '+(peer.lean===B?'b':'a'),text:'倾向「'+peer.lean+'」'}):null,
-      el('span',{class:'note',text:'对应你的「'+peer.situation.value+'」 · 相似与倾向是 AI 判断'})
+      el('span',{class:'note',text:'对应你的「'+peer.situation.value+'」 · 相似与否是 AI 判断'})
     ]),
     el('figure',{class:'evidence peer-quote'},[
       el('p',{class:'peer-k',text:'自述处境'}),el('blockquote',{text:peer.who}),
@@ -798,7 +796,7 @@ function peersView(block){
   if(!p.result)return null;
   const r=p.result;
   const how=(r.queries.length?`按你的 ${r.queries.length} 条情况去知乎找了 ${r.searched} 篇带亲身经历的回答，也翻了原来那批回答下的评论。`:'翻了原来那批回答下的评论。')
-    +'只收说话人讲自己经历的原话，引号里一字未改；原话里说清选了哪边的才标倾向。';
+    +'只收说话人讲自己经历的原话，引号里一字未改；他们后来怎么选的，看「经历与选择」。';
   return el('section',{class:'peers','aria-labelledby':'peers-title'},[
     el('header',{class:'peers-head'},[
       el('h4',{id:'peers-title',class:'peers-title',text:r.peers.length?`和你情况像的 ${r.peers.length} 个人`:'这次没找到处境和你明显相似的人'}),
@@ -806,7 +804,7 @@ function peersView(block){
       r.quota?el('p',{class:'note warn',text:'今天的检索次数用完了，这次只翻了原来的评论。'}):null,
       !r.peers.length?el('p',{class:'note',text:'可以换一种说法补充情况（比如写具体城市、行业、家里能支持多久），再找一次。'}):null
     ]),
-    ...r.peers.map(peer=>peerCard(peer,block))
+    ...r.peers.map(peerCard)
   ]);
 }
 function situationBlock(block){

@@ -402,8 +402,6 @@ body.drawer-open{overflow:hidden;}
 .peer-top{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;}
 .peer-top .note{margin:0;font-size:12.5px;}
 .peer-match{font-size:15px;font-weight:650;}
-.peer-lean{font-size:12px;font-weight:650;padding:0 9px;border-radius:999px;line-height:1.8;color:var(--a);background:var(--a-soft);border:1px solid var(--a-line);}
-.peer-lean.b{color:var(--b);background:var(--b-soft);border-color:var(--b-line);}
 .peer-quote{margin-top:8px;}
 .peer-quote blockquote + .peer-k{margin-top:8px;}
 .peer-quote blockquote + blockquote{margin-top:4px;}
