@@ -66,6 +66,19 @@ test('校验：「更符合目标」「建议先去」这类替用户下判断�
   assert.equal(verifyAdvice({advice:{text:'建议先去大厂待两年再说。'}},catalog).adviceRejected,true);
 });
 
+test('校验：混进正文的编号（e1、p2、n0s3）删掉，只留在 evidence 里；p2p、e2e 这类词不受影响',()=>{
+  const out=verifyAdvice({
+    understanding:'你关注了e1关于学历门槛的观点（p1），想知道适不适合。',
+    points:[{text:'家里能兜底时波动更能承受（e3、e4）',evidence:[idOf('如果没有经济压力')]}],
+    advice:{text:'如果怕波动，可以先按 n0s3 的做法问清融资进度。',facts:[],evidence:[]}
+  },catalog);
+  assert.equal(out.understanding,'你关注了关于学历门槛的观点，想知道适不适合。');
+  assert.equal(out.points[0].text,'家里能兜底时波动更能承受');
+  assert.equal(out.points[0].refs.length,1,'evidence 里的编号照常解析');
+  assert.doesNotMatch(out.advice.text,/n0s3/);
+  assert.equal(verifyAdvice({understanding:'p2p 网贷和 e2e 测试不受影响'},catalog).understanding,'p2p 网贷和 e2e 测试不受影响');
+});
+
 test('建议替用户选了一边：让模型重写一次；重写仍违规就不给建议',async()=>{
   const bad={understanding:'u',points:[],advice:{text:'可以先去低薪大厂，稳一点。'}};
   const good={understanding:'u2',points:[],advice:{text:'如果怕小公司撑不过一年，可以先问清它的融资和现金流。'}};

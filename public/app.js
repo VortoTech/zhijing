@@ -32,7 +32,7 @@ const toneById=id=>TONE_PERSONAS.find(t=>t.id===id)||TONE_PERSONAS[0];
 
 const session=createReadingSession();
 // activeReason 为 undefined 表示还没决定：宽屏默认展开第一条被评论区反驳的理由。
-const state={config:null,view:null,appView:'home',filter:'flagged',showAllForks:false,selectedForks:{},activeReason:undefined,openSources:new Set(),advisor:freshAdvisor(),chatOpen:undefined,tone:'rational',tableQuote:'a',tableReply:'',tableDraft:'',tableQuestion:'',tableThinking:false,tableListening:false,tableVoiceError:''};
+const state={config:null,view:null,appView:'home',filter:'flagged',showAllForks:false,selectedForks:{},activeReason:undefined,openSources:new Set(),advisor:freshAdvisor(),chatOpen:undefined,tone:'rational',topicTab:'zhihu',userTopic:false,tableQuote:'a',tableReply:'',tableDraft:'',tableQuestion:'',tableThinking:false,tableListening:false,tableVoiceError:''};
 // 登录账号与「知镜记住的情况」；没登录或没打开记住时，情况只存在这一页（localFacts）。
 const account={available:false,user:null,profile:null,note:''};
 const localFacts=[];
@@ -56,22 +56,24 @@ const clear=node=>node.replaceChildren();
 const button=(text,action,props={})=>{const b=el('button',{type:'button',text,...props});b.addEventListener('click',action);return b;};
 const cleanTitle=title=>title.replace(/\s*-\s*知乎$/,'');
 
-const APP_VIEWS=new Set(['home','table','zhihu','mine']);
+const APP_VIEWS=new Set(['home','table','zhihu','summary','mine']);
+// 同一个话题的三步：两边原话 → 换个角度听 → 我的结论。侧栏里合成一个「当前话题」。
+const TOPIC_VIEWS=new Set(['zhihu','table','summary']);
 function viewFromLocation(){
   const named=location.hash.replace(/^#/,'');
   return APP_VIEWS.has(named)?named:(new URLSearchParams(location.search).has('q')?'zhihu':'home');
 }
 function setAppView(next,{sync=true}={}){
-  const name=APP_VIEWS.has(next)?next:'home';
+  // 侧栏的「当前话题」回到这个话题上次停留的那一步。
+  const wanted=next==='topic'?state.topicTab:next;
+  const name=APP_VIEWS.has(wanted)?wanted:'home';
   state.appView=name;
-  $('home-view').hidden=name!=='home';
-  $('table-view').hidden=name!=='table';
-  $('zhihu-view').hidden=name!=='zhihu';
-  $('mine-view').hidden=name!=='mine';
+  if(TOPIC_VIEWS.has(name))state.topicTab=name;
+  for(const id of APP_VIEWS)$(id+'-view').hidden=name!==id;
   // Keep one search form and one draft while moving between home and results.
   (name==='zhihu'?$('result-search-slot'):$('home-search-slot')).append($('search-panel'));
   for(const button of document.querySelectorAll('[data-view-target]')){
-    const selected=button.dataset.viewTarget===(name==='zhihu'?'home':name);
+    const selected=button.dataset.viewTarget===(TOPIC_VIEWS.has(name)?'topic':name);
     if(selected)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
   }
   document.body.dataset.view=name;
@@ -80,6 +82,9 @@ function setAppView(next,{sync=true}={}){
     url.hash=name==='home'?(url.searchParams.has('q')?'home':''):name;
     history.pushState({appView:name},'',url);
   }
+  // 回首页是为了问新问题：当前话题已经在「继续」卡片里，搜索框不再预填它。
+  if(name==='home'&&$('q').value===topicQuestion())$('q').value='';
+  renderTopicChrome();
   renderAdvisor();
   scrollTo({top:0,behavior:'smooth'});
 }
@@ -97,9 +102,10 @@ function viewFor(question){
 }
 
 function clearResults(){
-  for(const id of ['result-head','compare','table-result-head','table-stage','advisor','sources-summary','sources-note','list','list-bar','diag-slot','source-note'])clear($(id));
+  for(const id of ['result-head','compare','table-result-head','table-stage','zhihu-topic-bar','summary-topic-bar','summary-body','advisor','sources-summary','sources-note','list','list-bar','diag-slot','source-note'])clear($(id));
   for(const id of ['sources','data-details']){$(id).hidden=true;$(id).open=false;}
   $('advisor').hidden=true;$('chat-launcher').hidden=true;document.body.classList.remove('chat-open');
+  $('zhihu-view').classList.remove('has-topic');
 }
 function setBusy(busy){
   $('ask-btn').disabled=busy;
@@ -132,7 +138,8 @@ function showError(message,{informational=false}={}){
 function syncUrl(view){
   try{
     const url=new URL(location.href);
-    if(view.kind==='ask')url.searchParams.set('q',view.question);else url.searchParams.delete('q');
+    // 用户自己挑的话题（示例也算）写进链接：刷新、分享都回到同一个话题；开机默认载入的示例不写。
+    if(view.kind==='ask'||state.userTopic)url.searchParams.set('q',view.question);else url.searchParams.delete('q');
     history.replaceState(null,'',url);
   }catch{}
 }
@@ -324,6 +331,7 @@ function opinionStage(block,records){
       ...seats
     ]),
     el('aside',{class:'table-conversation'},[
+    tableContext(),
     el('div',{class:'table-response'+(state.tableThinking?' thinking':''),'aria-live':'polite'},[
       el('img',{src:toneById(state.tone).asset,alt:'',width:'52',height:'52'}),
       el('div',{},[
@@ -678,11 +686,6 @@ function render(){
   }
   $('result-head').replaceChildren(...head);
   $('compare').replaceChildren(...comparisonSections(comparison,data.records,sample));
-  $('table-result-head').replaceChildren(
-    el('span',{class:'table-topic-kicker',text:'正在讨论'}),
-    el('strong',{text:data.meta.question||data.topic.title}),
-    button('换一个话题',()=>setAppView('home'),{class:'switch-view compact'})
-  );
   const table=opinionStage(comparison,data.records);
   $('table-stage').replaceChildren(table||el('div',{class:'board-empty',text:'这个话题暂时还没有可以摆上桌的双边观点。'}));
 
@@ -721,6 +724,7 @@ function render(){
     el('p',{text:'全部结果：'+d.total+' 条；取得评论：'+d.commentBearing+' 条；被反驳或补充前提：'+d.flagged+' 条；分析完成：'+d.analysisComplete+' 条；未完成：'+d.analysisIncomplete+' 条；无评论：'+d.noComments+' 条。'})
   );
   $('data-details').hidden=false;
+  renderTopicChrome();
   renderAdvisor();
 }
 
@@ -1112,6 +1116,7 @@ function quickReplies(block){
   const more=src
     ?SECTIONS.filter(sec=>sec.count(src)&&!revealed(src,sec.id)).map(sec=>button(sec.label+(sec.count(src)>1?' '+sec.count(src):''),()=>reveal(sec,src),{class:'chip-btn more-chip',disabled:busy}))
     :(ready?QUICK_ASKS.slice(1):QUICK_ASKS).map(q=>button(q,()=>askAdvisor(q),{class:'chip-btn',disabled:busy}));
+  if(src)more.unshift(button('带走这次梳理',()=>setAppView('summary'),{class:'chip-btn primary',disabled:busy}));
   more.push(button('找和我情况像的人',findPeersFor,{class:'chip-btn peer-chip',disabled:busy||!ready,title:ready?'按你的情况去知乎找处境相似的人':'先说一条你的情况'}));
   rows.push([src?'也可以问':'也可以',more]);
   return el('div',{class:'quick-replies',role:'group','aria-label':'快捷回复'},rows.map(([label,chips])=>el('div',{class:'qr-row'},[label?el('span',{class:'qr-k',text:label}):null,...chips])));
@@ -1183,13 +1188,129 @@ function renderAdvisor(){
   }
 }
 
+// ── 当前话题：一个问题从头到尾是一条线：两边原话 → 换个角度听 → 我的结论 ──
+const TOPIC_STEPS=[['zhihu','两边原话'],['table','换个角度听'],['summary','我的结论']];
+const topicQuestion=()=>{const d=session.get();return d?(d.meta?.question||d.topic?.title||''):'';};
+function topicBar(active){
+  if(!session.get())return null;
+  return el('div',{class:'topic-bar'},[
+    el('div',{class:'topic-name'},[el('p',{class:'topic-kicker',text:'当前话题'}),el('h2',{class:'topic-title',text:topicQuestion()})]),
+    el('nav',{class:'topic-steps','aria-label':'这个话题的三步'},TOPIC_STEPS.map(([id,label],i)=>{
+      const step=button('',()=>setAppView(id),{class:'topic-step'+(id===active?' current':''),'aria-current':id===active?'step':null});
+      step.append(el('span',{class:'step-n',text:String(i+1)}),el('span',{text:label}));
+      return step;
+    }))
+  ]);
+}
+// 用户说过、选过的情况：观点桌面和「我的结论」都用它，和问知镜是同一份。
+function situationsList(){
+  const block=session.get()?.comparison;
+  const picks=Object.entries(state.selectedForks).map(([f,b])=>{
+    const fork=block?.forks?.[Number(f)],branch=fork?.branches?.[b];
+    return fork&&branch?situationText(fork,branch):null;
+  }).filter(Boolean);
+  return [...picks,...confirmedFacts().map(f=>f.value)];
+}
+const adviceRounds=()=>state.advisor.turns.filter(t=>t.kind==='advice'&&t.reply).length;
+function openFullChat(){setAppView('zhihu');openChat();}
+// 观点桌面右侧：让人看得出这里和问知镜是同一段对话。
+function tableContext(){
+  const ctx=situationsList(),rounds=adviceRounds();
+  if(!ctx.length&&!rounds)return null;
+  return el('div',{class:'table-context'},[
+    ctx.length?el('div',{class:'table-context-chips'},[el('span',{class:'ctx-k',text:'知镜会参考'}),...ctx.map(text=>el('span',{class:'sit-chip',text}))]):null,
+    rounds?el('div',{class:'table-context-links'},[
+      button(`看完整对话（${rounds} 轮）`,openFullChat,{class:'link-btn'}),
+      button('带走这次梳理',()=>setAppView('summary'),{class:'link-btn'})
+    ]):null
+  ]);
+}
+function renderResume(){
+  const box=$('home-resume');
+  if(!state.userTopic||!session.get()){box.hidden=true;clear(box);return;}
+  const said=situationsList().length,rounds=adviceRounds();
+  const detail=[said?`已说了 ${said} 条情况`:null,rounds?`和知镜聊了 ${rounds} 轮`:null].filter(Boolean).join(' · ');
+  const card=button('',()=>setAppView('topic'),{class:'resume-card'});
+  card.append(...[el('span',{class:'resume-k',text:'继续上次的话题'}),el('strong',{text:topicQuestion()}),detail?el('span',{class:'resume-d',text:detail}):null,el('span',{class:'resume-go','aria-hidden':'true',text:'→'})].filter(Boolean));
+  box.hidden=false;box.replaceChildren(card);
+}
+// 我的结论：只用这一页已有的东西拼出来（你的情况、上一次梳理、找到的同路人），不再调模型。
+function renderSummary(){
+  const body=$('summary-body');
+  $('summary-topic-bar').replaceChildren(...[topicBar('summary')].filter(Boolean));
+  const dataset=session.get();
+  if(!dataset){clear(body);return;}
+  const block=dataset.comparison,reply=lastAdvice();
+  const peersTurn=[...state.advisor.turns].reverse().find(t=>t.kind==='peers'&&t.result?.peers?.length);
+  const situations=situationsList();
+  if(!reply){
+    body.replaceChildren(el('div',{class:'summary-empty'},[
+      el('h3',{text:'还没有可以带走的结论'}),
+      el('p',{class:'note',text:'先在「两边原话」里跟知镜说说你的情况，让它对照一次原话。这里会整理出：你的情况、两边最相关的原话、还缺的信息，和可以先做的一步。'}),
+      state.config?.adviceReady&&block?.status==='complete'?button('去跟知镜说说我的情况',openFullChat,{class:'btn'}):null
+    ]));
+    return;
+  }
+  const quoteLine=ref=>`“${ref.text}”——${boardById.get(ref.recordId)?.author||'匿名用户'}`;
+  const unknown=[...reply.assumptions.map(a=>'前提：'+a),...reply.gaps.map(g=>'原话里没有：'+g)];
+  const peers=peersTurn?peersTurn.result.peers.slice(0,3):[];
+  const sec=(title,children,cls='')=>el('section',{class:'summary-sec '+cls},[el('h3',{text:title}),...children]);
+  const status=el('span',{class:'note summary-status','aria-live':'polite'});
+  const copy=async()=>{
+    const lines=[`【知镜 · 我的梳理】${topicQuestion()}`,
+      situations.length?'我的情况：'+situations.join('；'):null,
+      reply.understanding?'真正要定的事：'+reply.understanding:null,
+      reply.points.length?'对照原话得出的判断：':null,
+      ...reply.points.map(p=>'· '+p.text+(p.refs[0]?.text?'（原话：'+quoteLine(p.refs[0])+'）':'')),
+      reply.counterpoints[0]?'评论区的反驳：“'+reply.counterpoints[0].commentText+'”':null,
+      unknown.length?'还没弄清：'+unknown.join('；'):null,
+      reply.advice?'可以先做的一步：'+reply.advice.text:null,
+      ...peers.map(p=>`处境相似的人（${p.similar}）：“${p.who}”`),
+      '原话来自知乎回答与评论，一字未改；判断由 AI 整理，不替你做决定。',
+      location.origin+'/?q='+encodeURIComponent(topicQuestion())
+    ].filter(Boolean);
+    try{await navigator.clipboard.writeText(lines.join('\n'));status.textContent=ui('已复制，可以发给朋友或存进备忘录。');}
+    catch{status.textContent=ui('没能复制，请手动选中上面的内容。');}
+  };
+  body.replaceChildren(el('article',{class:'summary-card'},[
+    sec('我的情况',[situations.length?el('div',{class:'summary-chips'},situations.map(text=>el('span',{class:'sit-chip',text}))):el('p',{class:'note',text:'这次没有说具体情况。'})]),
+    reply.understanding?sec('真正要定的事',[el('p',{text:reply.understanding})]):null,
+    reply.points.length?sec('对照原话得出的判断',[el('ol',{class:'summary-points'},reply.points.map(p=>el('li',{},[
+      el('p',{class:'summary-point',text:p.text}),
+      p.basis==='speculation'?el('span',{class:'basis',text:'推测 · 没有原话支持'}):null,
+      p.refs[0]?refView(p.refs[0]):null
+    ])))]):null,
+    reply.counterpoints.length?sec('评论区的反驳',[pushbackQuote(reply.counterpoints[0])]):null,
+    unknown.length?sec('还没弄清的',[el('ul',{class:'bot-list'},unknown.map(text=>el('li',{text})))]):null,
+    reply.advice?sec('可以先做的一步（随时可以推翻）',[el('p',{class:'advice-text',text:reply.advice.text})],'summary-next'):null,
+    peers.length?sec('处境相似的人怎么说',peers.map(peerCard)):null,
+    el('div',{class:'summary-actions'},[
+      button('复制这份梳理',copy,{class:'btn'}),
+      button('回到两边原话继续聊',openFullChat,{class:'btn ghost'}),
+      button('换个问题',()=>setAppView('home'),{class:'link-btn'}),
+      status
+    ]),
+    personalized()?el('p',{class:'note',text:'已记在「我的知乎」，下次登录还能看到。'})
+      :account.available&&!account.user?el('p',{class:'note'},[el('a',{href:'/auth/login',class:'link-btn',text:'用知乎登录'}),'后，知镜可以记住你的情况，下次接着聊。']):null,
+    el('p',{class:'note summary-trust',text:'原话来自知乎回答与评论，一字未改；判断由 AI 整理，不替你做决定。'})
+  ]));
+}
+function renderTopicChrome(){
+  $('nav-topic').hidden=!state.userTopic;
+  $('zhihu-view').classList.toggle('has-topic',!!session.get());
+  $('zhihu-topic-bar').replaceChildren(...[topicBar('zhihu')].filter(Boolean));
+  $('table-result-head').replaceChildren(...[topicBar('table')].filter(Boolean));
+  renderResume();
+  renderSummary();
+}
+
 const EXAMPLE_DESCRIPTIONS={
   '考研还是直接工作':'继续深造，还是尽早进入职场？',
   '毕业去大城市还是回老家':'在大城市发展，还是回家乡生活？',
   '研究生毕业去国企还是私企':'更稳定的选择，还是更大的发展空间？',
   '第一份工作选高薪小公司还是低薪大厂':'高薪和成长，哪个更重要？'
 };
-function openQuestion(view){setAppView('zhihu');return load(view);}
+function openQuestion(view){state.userTopic=true;setAppView('zhihu');return load(view);}
 function renderExamples(){
   $('examples').replaceChildren(...[...EXAMPLES.slice(1),EXAMPLES[0]].map(e=>{
     const node=button('',()=>openQuestion(viewFor(e.question)),{
@@ -1212,8 +1333,6 @@ $('q').addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKe
 $('brand-home')?.addEventListener('click',()=>setAppView('home'));
 $('enter-table')?.addEventListener('click',()=>setAppView('table'));
 $('enter-zhihu')?.addEventListener('click',()=>setAppView('zhihu'));
-$('go-table').addEventListener('click',()=>setAppView('table'));
-$('go-zhihu').addEventListener('click',()=>setAppView('zhihu'));
 for(const back of document.querySelectorAll('.back-home'))back.addEventListener('click',()=>setAppView('home'));
 window.addEventListener('popstate',()=>setAppView(viewFromLocation(),{sync:false}));
 
@@ -1396,6 +1515,8 @@ async function boot(){
   if(q){
     try{const view=viewFor(normalizeQuestion(q));if(view.kind==='sample'||state.config.askReady||isSaved(view.question))initial=view;}catch{}
   }
+  // 用户自己挑过话题（链接里带问题，或直接打开了话题页）才出现「当前话题」；开机默认载入的示例不算。
+  state.userTopic=!!q||TOPIC_VIEWS.has(location.hash.replace(/^#/,''));
   setAppView(viewFromLocation(),{sync:false});
   await load(initial);
   if(state.appView==='home'&&!q)$('q').value='';

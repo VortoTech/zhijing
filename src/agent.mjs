@@ -16,6 +16,14 @@ export const FACT_KEYS={
 const BANNED=/胜率|概率|百分之|\d+(?:\.\d+)?\s*[%％]|打分|评分|得分|你应该选|你就选|建议你选|更适合你的是|最优解|稳赢/;
 const LEANS=/(更符合|更适合|更有利于|更利于|更值得)(你|您|目标|需求|情况|规划|期待)|(建议|倾向于?)(先)?(选|去|进)/;
 const SENSITIVE=/病|抑郁|焦虑症|怀孕|宗教|信仰|政治|党员|性取向|同性|离婚|负债|欠款|身份证|手机号|住址/;
+// 编号只该出现在 evidence 这类字段里；混进正文的「e1」「p2」「n0s3」对用户没有意义，删掉，连带只剩标点的括号和多余的顿号。
+const ID_TOKEN=/\b(?:[ep]\d{1,3}|[nrd]\d{1,2}[sc]\d{1,3})\b/g;
+const stripIds=text=>text
+  .replace(ID_TOKEN,'')
+  .replace(/[（(][\s、，,和及]*[)）]/g,'')
+  .replace(/[、，,]\s*(?=[、，,。；;！!？?）)]|$)/g,'')
+  .replace(/[ \t]{2,}/g,' ')
+  .trim();
 
 const str=(value,max)=>typeof value==='string'&&value.trim()&&value.trim().length<=max?value.trim():null;
 const list=value=>Array.isArray(value)?value:[];
@@ -39,6 +47,7 @@ const ADVISOR_PROMPT=[
   '7. 用户这次的话里如果透露了关于他自己的新情况（不是关于某个选项的信息，比如「小公司多给五千」不算），放进 fact_proposals：key 从 stage/finance/city/timeline/risk/priority/dealbreaker/other 里选，value 不超过 16 字，quote 必须是 message 里连续的一段，逐字复制。',
   '8. next_question 只问一个最能减少不确定性的问题，options 给 2-4 个短选项（每个不超过 12 字），用户可以直接点。',
   '9. 这是聊天：所有文字都直接对用户说话，用「你」称呼他，不要写「用户」；口吻像当面聊，简短、具体。',
+  '10. 编号（e1、p2 这类）只写进 evidence、counterpoints 字段，任何给用户看的文字里都不要出现编号；提到某句原话时，直接说它讲了什么。',
   '',
   '只输出 JSON：{"understanding":"一两句复述用户的处境和真正要决定的事，不超过 80 字",',
   '"points":[{"text":"关键判断，不超过 50 字","evidence":["e3","p1"]}],',
@@ -113,7 +122,7 @@ export function verifyAdvice(parsed,catalog,{message='',facts=[]}={}){
     }
     return out;
   };
-  const clean=(value,max)=>{const text=str(value,max);return text&&!BANNED.test(text)?text:null;};
+  const clean=(value,max)=>{const text=str(value,max);return text&&!BANNED.test(text)?stripIds(text)||null:null;};
   // 替用户下判断的变体：「考研可能更符合目标」「建议先去大厂」。原话里「大厂更适合新人」这类说理由的句子不拦。
   const leansOption=text=>LEANS.test(text)&&(catalog.options||[]).some(option=>text.includes(option)||text.includes(option.slice(-2)));
   const points=[];
@@ -193,7 +202,7 @@ async function followUpSearch(query,{question,gap},env,{chat,request,search,sign
     if(typeof id==='string'&&snippets.has(id)&&!picked.includes(id))picked.push(id);
     if(picked.length>=3)break;
   }
-  const summary=picked.length&&str(parsed?.summary,80)&&!BANNED.test(parsed.summary)?parsed.summary.trim():'';
+  const summary=picked.length&&str(parsed?.summary,80)&&!BANNED.test(parsed.summary)?stripIds(parsed.summary.trim()):'';
   const byId=new Map(records.map(r=>[r.id,r]));
   return {query,summary,found:picked.map(id=>{
     const s=snippets.get(id),r=byId.get(s.recordId);

@@ -227,3 +227,58 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,t
  .table-response p{font-size:13px;}
  html[lang="en"] .topic-copy strong{font-size:14px;}
 }
+
+/* ── 当前话题：一个问题从头到尾一条线（两边原话 → 换个角度听 → 我的结论） ── */
+.topic-bar{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 24px;margin:0 0 20px;padding:0 0 16px;border-bottom:1px solid var(--line);}
+.topic-name{min-width:0;flex:1 1 320px;}
+.topic-kicker{margin:0 0 4px;font-size:12px;font-weight:650;letter-spacing:.08em;color:var(--a);}
+.topic-title{margin:0;font:650 26px/1.4 var(--sans);color:var(--ink);text-wrap:balance;}
+.topic-steps{display:flex;flex:none;gap:4px;padding:4px;border-radius:12px;background:#F1F6FD;}
+.topic-step{display:flex;align-items:center;gap:7px;min-height:38px;padding:6px 14px;border:0;border-radius:9px;background:transparent;color:var(--ink-2);font:500 13px var(--sans);white-space:nowrap;cursor:pointer;}
+.topic-step:hover{color:var(--a);}
+.topic-step .step-n{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;border:1px solid var(--line-2);background:#fff;font-size:11px;font-variant-numeric:tabular-nums;}
+.topic-step.current{background:#fff;color:var(--a);font-weight:650;box-shadow:0 2px 8px -4px #7397C8;}
+.topic-step.current .step-n{background:var(--a);border-color:var(--a);color:#fff;}
+#table-result-head{display:block;margin:0;}
+/* 结果页不再重复首页的大标题和热门话题：话题名在上面的条里，换问题回首页 */
+#zhihu-view.has-topic #result-search-slot,#zhihu-view .examples{display:none;}
+#zhihu-view .result-title{display:none;}
+#zhihu-view #result-head{margin-top:0;}
+/* 首页：回到正在想的那个话题 */
+.home-resume{margin:0 0 14px;}
+.resume-card{display:flex;align-items:center;gap:12px;width:100%;padding:12px 16px;border:1px solid #BFD6FA;border-radius:14px;background:#F3F8FF;color:var(--ink);text-align:left;font:inherit;cursor:pointer;}
+.resume-card:hover{border-color:var(--a);}
+.resume-k{flex:none;font-size:12px;font-weight:650;color:var(--a);}
+.resume-card strong{flex:1;min-width:0;overflow:hidden;font-size:15px;font-weight:600;text-overflow:ellipsis;white-space:nowrap;}
+.resume-d{flex:none;font-size:12px;color:var(--ink-3);}
+.resume-go{flex:none;font-size:18px;color:var(--a);}
+/* 观点桌面：看得出和问知镜是同一段对话 */
+.table-context{display:flex;flex-direction:column;gap:8px;margin:0 0 12px;padding:0 0 12px;border-bottom:1px solid var(--line);}
+.table-context-chips{display:flex;flex-wrap:wrap;align-items:center;gap:6px;}
+.table-context-links{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;}
+/* 我的结论 */
+.summary-card{display:grid;gap:22px;max-width:880px;padding:26px 28px;border:1px solid var(--line);border-radius:16px;background:#fff;box-shadow:0 6px 24px -18px #7397C8;}
+.summary-sec h3{margin:0 0 10px;font-size:12px;font-weight:650;letter-spacing:.06em;color:var(--ink-3);}
+.summary-sec>p{margin:0;font-size:15px;line-height:1.8;}
+.summary-chips{display:flex;flex-wrap:wrap;gap:6px;}
+.summary-points{display:grid;gap:16px;margin:0;padding-left:1.3em;}
+.summary-point{margin:0 0 6px;font-size:15px;font-weight:600;line-height:1.7;}
+.summary-next{padding:16px 18px;border-radius:12px;background:#F0F6FF;}
+.summary-next .advice-text{margin:0;font-size:15px;line-height:1.8;}
+.summary-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding-top:14px;border-top:1px solid var(--line);}
+.summary-trust{margin:0;font-size:12px;}
+.summary-empty{max-width:640px;padding:28px;border:1px dashed var(--line-2);border-radius:16px;background:#FAFCFF;}
+.summary-empty h3{margin:0 0 8px;font-size:18px;}
+@media(max-width:760px){
+ .primary-nav{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:1fr;}
+ .topic-bar{margin-bottom:14px;padding-bottom:12px;}
+ .topic-title{font-size:20px;}
+ .topic-steps{width:100%;}
+ .topic-step{flex:1;justify-content:center;padding:6px 4px;font-size:12px;}
+ .topic-step .step-n{display:none;}
+ .resume-card{flex-wrap:wrap;gap:4px 10px;}
+ .resume-card strong{flex-basis:100%;order:2;white-space:normal;}
+ .resume-d{order:3;}
+ .resume-go{order:1;margin-left:auto;}
+ .summary-card{gap:18px;padding:18px 16px;}
+}

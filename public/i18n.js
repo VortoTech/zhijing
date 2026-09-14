@@ -5,7 +5,7 @@ const STATIC_COPY={
     pageDescription:'输入你正在纠结的选择，知镜把知乎上两边的真人原话并排摆出来，评论区里有人当场不同意的，也一起摆出来。每句都能核对，都署名答主。',
     heroAlt:'看山在左侧拿着望远镜观察不同观点',
     homeEyebrow:'知乎观点体验空间',homeTitle:'你正在纠结什么？',homeTagline:'把问题交给知镜，看看知乎上的人怎么说。',homeStart:'开始体验',homeProof:'真人原话 · 来源可核对 · 不替你做决定',
-    tableViewLabel:'观点桌面',backHome:'←　返回',goZhihu:'查看知乎真实话题',
+    tableViewLabel:'观点桌面',backHome:'←　换个问题',navTopic:'当前话题',summaryLabel:'我的结论',goZhihu:'查看知乎真实话题',
     zhihuViewLabel:'知乎真实话题与评论',goTable:'进入观点桌面',zhihuKicker:'知乎现场 · 真人原话',zhihuTitle:'看看知乎里，大家真的怎么说。',zhihuLede:'搜索一个话题，保留答主原话、赞数和评论区里的当场反驳。',
     searchLabel:'搜索知乎观点话题',searchPlaceholder:'比如：第一份工作，选高薪小公司还是低薪大厂？',searchButton:'查看真实讨论',hotNow:'热门话题推荐',examplesLabel:'示例问题',resultsLabel:'结果',dataSummary:'这些内容是怎么来的'
   },
@@ -15,7 +15,7 @@ const STATIC_COPY={
     pageDescription:'Enter a choice you are weighing. Zhijing places real arguments from both sides next to each other, including direct pushback from the comments. Every quote is attributed and verifiable.',
     heroAlt:'Kanshan looks through binoculars at different points of view',
     homeEyebrow:'A SPACE FOR REAL OPINIONS',homeTitle:'What’s on your mind?',homeTagline:'Bring your question to Zhijing. See what people on Zhihu say.',homeStart:'START',homeProof:'Real voices · Checkable sources · Your decision',
-    tableViewLabel:'Opinion Table',backHome:'←  Back',goZhihu:'View real Zhihu topics',
+    tableViewLabel:'Opinion Table',backHome:'←  New question',navTopic:'Current topic',summaryLabel:'My takeaway',goZhihu:'View real Zhihu topics',
     zhihuViewLabel:'Real Zhihu topics and comments',goTable:'Enter the Opinion Table',zhihuKicker:'LIVE ON ZHIHU · REAL VOICES',zhihuTitle:'See what people on Zhihu actually say.',zhihuLede:'Search a topic and keep the authors\' exact words, upvotes, and direct challenges from the comments.',
     searchLabel:'Search a topic on Zhihu',searchPlaceholder:'For example: postgraduate study or start working',searchButton:'View real discussion',hotNow:'Explore saved examples:',examplesLabel:'Example topics',resultsLabel:'Results',dataSummary:'How this content was assembled'
   }
@@ -24,6 +24,12 @@ const STATIC_COPY={
 const EN_EXACT=new Map(Object.entries({
 "继续深造，还是尽早进入职场？":"Keep studying, or enter the workplace?","在大城市发展，还是回家乡生活？":"Build a life in a major city, or return home?","更稳定的选择，还是更大的发展空间？":"More stability, or more room to grow?","高薪和成长，哪个更重要？":"Higher pay or growth \u2014 what matters more?","同一个问题，多种视角。选择一个看法，让它换个角度说。":"One question, many perspectives. Choose a voice to explore it.","不替你做决定，只提供多角度的分析。":"Different perspectives. The decision remains yours.","让积累，成为新的视角":"A new perspective on what you save","登录知乎，查看你的收藏、创作与记住的情况。":"Sign in to explore your favorites, writing, and saved context.","检查收藏中的观点与评论区异议。":"Check saved opinions and reader objections.","回看自己的创作与读者反馈。":"Review your writing and reader feedback.","管理你确认过的个人情况与选择。":"Manage your confirmed context and choices.",
   '已保存的知乎原话 · 可核对来源':'Saved Zhihu quotes · Checkable sources',
+  '当前话题':'Current topic','这个话题的三步':'Three steps for this topic','两边原话':'Both sides','换个角度听':'Other angles','我的结论':'My takeaway',
+  '继续上次的话题':'Continue your topic','带走这次梳理':'Take this review with you','还没有可以带走的结论':'No takeaway yet',
+  '先在「两边原话」里跟知镜说说你的情况，让它对照一次原话。这里会整理出：你的情况、两边最相关的原话、还缺的信息，和可以先做的一步。':'Tell Zhijing about your situation under “Both sides” first and let it check the quotes once. This page will then collect your situation, the most relevant quotes, what is still unclear, and one next step.',
+  '去跟知镜说说我的情况':'Tell Zhijing about my situation','我的情况':'My situation','这次没有说具体情况。':'No specific situation was shared this time.','真正要定的事':'What you are really deciding','对照原话得出的判断':'Judgments checked against quotes','评论区的反驳':'Pushback from the comments','还没弄清的':'Still unclear','处境相似的人怎么说':'What people in similar situations say',
+  '复制这份梳理':'Copy this review','回到两边原话继续聊':'Back to both sides','换个问题':'New question','已记在「我的知乎」，下次登录还能看到。':'Saved to My Zhihu for your next sign-in.','后，知镜可以记住你的情况，下次接着聊。':' so Zhijing can remember your situation next time.',
+  '原话来自知乎回答与评论，一字未改；判断由 AI 整理，不替你做决定。':'Quotes come from Zhihu answers and comments, unchanged. Judgments are organized by AI and never decide for you.','已复制，可以发给朋友或存进备忘录。':'Copied. Share it or save it to your notes.','没能复制，请手动选中上面的内容。':'Could not copy. Please select the content above manually.',
   '检索额度已用完，本次仅展示已取得的材料。':'The search budget is exhausted; only retrieved material is shown.',
   '部分检索未完成，本次材料可能不完整，可以重试。':'Some searches failed. These results may be incomplete; you can retry.',
 "当前为示例模式，可阅读已保存的讨论；实时搜索尚未开放。":"Example mode: saved discussions are available; live search is not enabled.",
@@ -75,6 +81,9 @@ const EN_EXACT=new Map(Object.entries({
 
 const EN_PATTERNS=[
   [/^已等待 (\d+) 秒$/,m=>`Waited ${m[1]} seconds`],
+  [/^已说了 (\d+) 条情况$/,m=>`${m[1]} details shared`],
+  [/^和知镜聊了 (\d+) 轮$/,m=>`${m[1]} rounds with Zhijing`],
+  [/^看完整对话（(\d+) 轮）$/,m=>`View full conversation (${m[1]})`],
   [/^看示例：(.*)$/,m=>`View example: ${m[1]}`],
   [/^知乎 · 观点 ([AB])$/,m=>`Zhihu · View ${m[1]}`],
   [/^关于「(.+)」的原话暂时缺席$/,m=>`No source quote is available yet for “${m[1]}”`],

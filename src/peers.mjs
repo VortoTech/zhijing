@@ -12,6 +12,8 @@ const MAX_DATASET_COMMENTS=120;
 const MAX_PEERS=5;
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const str=(value,max)=>typeof value==='string'&&value.trim()&&value.trim().length<=max?value.trim():null;
+// 「哪里相似」是模型写的正文，里面不该出现 f0、c1、n0s3 这类编号。
+const ID_TOKEN=/\b(?:[fcep]\d{1,3}|[nrd]\d{1,2}[sc]\d{1,3})\b/g;
 const list=value=>Array.isArray(value)?value:[];
 const cleanTitle=title=>String(title||'').replace(/\s*-\s*知乎$/,'');
 
@@ -102,7 +104,7 @@ export function verifyPeers(parsed,pool,{situations}){
   for(const peer of list(parsed?.peers)){
     const situation=bySituation.get(peer?.situation);
     const who=typeof peer?.who==='string'?pool.snippets.get(peer.who):null;
-    const similar=str(peer?.similar,20);
+    const similar=str(peer?.similar,20)?.replace(ID_TOKEN,'').replace(/[（(][\s、，,]*[)）]/g,'').trim()||null;
     if(!situation||!who||!similar||used.has(who.speaker)||!isSelfAccount(who.text)){dropped++;continue;}
     const said=[];
     for(const id of list(peer.said)){
