@@ -15,7 +15,7 @@
 | PostgreSQL 13（同机已有实例，只听本机） | 独立的库 `zhijing`、同名角色；知镜以系统用户 `zhijing` 经 socket 登录（peer 认证，无密码），没有改动共享的 `pg_hba.conf` |
 | `/var/log/zhijing.log` | 服务日志（已脱敏，不含凭据、正文、评论） |
 
-线上配置与本地 `.env.local` 相同，另外固定 `PORT=4320`、`HOST=127.0.0.1`、`ZHIJING_ENABLE_PILOT=1`、`ZHIJING_LIVE_DAILY_LIMIT=400`、`DATABASE_URL=postgresql://zhijing@%2Fvar%2Frun%2Fpostgresql/zhijing`。可选 `ZHIJING_ADVICE_DAILY_LIMIT`（决策陪伴每日次数，默认 600）。
+线上配置与本地 `.env.local` 相同，另外固定 `PORT=4320`、`HOST=127.0.0.1`、`ZHIJING_ENABLE_PILOT=1`、`ZHIJING_LIVE_DAILY_LIMIT=400`、`DATABASE_URL=postgresql://zhijing@%2Fvar%2Frun%2Fpostgresql/zhijing`。可选 `ZHIJING_ADVICE_DAILY_LIMIT`（决策陪伴每日次数，默认 600）。另有 `AI_FALLBACK_MODEL=qwen-plus`：主模型上游卡住时自动改用它（线上已配，9/15 凌晨 deepseek 上游出现过几分钟整段超时）。
 
 ## 发布新版本
 

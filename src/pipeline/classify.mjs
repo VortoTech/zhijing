@@ -75,7 +75,28 @@ function modelEndpoint(env){
   return base.href.replace(/\/$/,'')+'/chat/completions';
 }
 
-export async function chatJSON({system,user,maxTokens},env,request,signal){
+// 备用模型：主模型所在的上游偶尔整段卡住（9/15 凌晨出现过几分钟请求全部 60 秒超时）。
+// 主模型调用失败（超时、网络错误、HTTP 5xx/429）时，改用 AI_FALLBACK_MODEL 再试一次，并在接下来 5 分钟直接走备用，
+// 免得每个请求都先等 25 秒超时。备用不带 AI_EXTRA_BODY（那是主模型服务商的私有参数）。
+// 模型返回了、但内容不合规，不算上游故障，照旧抛给调用方重试；用户取消也不切。
+const FALLBACK_WINDOW_MS=5*60*1000;
+let primaryDownUntil=0;
+export function resetModelFallback(){primaryDownUntil=0;}
+const upstreamFailure=error=>['TimeoutError','AbortError'].includes(error?.name)||error instanceof TypeError||error?.status>=500||error?.status===429;
+
+export async function chatJSON(args,env,request,signal,{now=Date.now}={}){
+  const fallback=env.AI_FALLBACK_MODEL&&env.AI_FALLBACK_MODEL!==env.AI_MODEL?env.AI_FALLBACK_MODEL:null;
+  if(fallback&&now()<primaryDownUntil)return callModel(fallback,{},args,env,request,signal);
+  try{return await callModel(env.AI_MODEL,extraBody(env),args,env,request,signal);}
+  catch(error){
+    if(!fallback||signal?.aborted||!upstreamFailure(error))throw error;
+    primaryDownUntil=now()+FALLBACK_WINDOW_MS;
+    console.info(JSON.stringify({event:'model_fallback',reason:error.status||error.name||'network'}));
+    return callModel(fallback,{},args,env,request,signal);
+  }
+}
+
+async function callModel(model,extra,{system,user,maxTokens},env,request,signal){
   const body=await request(modelEndpoint(env),{
     signal,
     method:'POST',
@@ -84,10 +105,10 @@ export async function chatJSON({system,user,maxTokens},env,request,signal){
       'Content-Type':'application/json'
     },
     body:JSON.stringify({
-      model:env.AI_MODEL,
+      model,
       temperature:0,
       max_tokens:maxTokens,
-      ...extraBody(env),
+      ...extra,
       response_format:{type:'json_object'},
       messages:[
         {role:'system',content:system},
