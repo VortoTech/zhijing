@@ -47,6 +47,8 @@
 }
 
 *{box-sizing:border-box;}
+/* 带 display 的组件（问知镜面板、右下角按钮等）隐藏时也必须真的不显示 */
+[hidden]{display:none!important;}
 html,body{margin:0;padding:0;}
 body{
   background:var(--bg);color:var(--ink);
