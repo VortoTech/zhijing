@@ -27,7 +27,9 @@
 # 本机
 REV=$(git rev-parse --short HEAD); B=$(mktemp -d)
 git archive HEAD | tar -x -C $B && (cd $B && npm ci --omit=dev --ignore-scripts)
-tar -czf /tmp/zhijing-$REV.tar.gz -C $B .
+# macOS 的 tar 会把扩展属性打成 ._* 文件，topics/ 里多出 ._x.json 会让服务启动失败（9/14 出过一次）
+COPYFILE_DISABLE=1 tar --no-xattrs -czf /tmp/zhijing-$REV.tar.gz -C $B .
+tar -tzf /tmp/zhijing-$REV.tar.gz | grep -c '/\._' && echo '有 ._ 文件，别发布'
 scp /tmp/zhijing-$REV.tar.gz <服务器>:/root/
 
 # 服务器
