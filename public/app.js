@@ -32,7 +32,7 @@ const toneById=id=>TONE_PERSONAS.find(t=>t.id===id)||TONE_PERSONAS[6];
 
 const session=createReadingSession();
 // activeReason 为 undefined 表示还没决定：宽屏默认展开第一条被评论区反驳的理由。
-const state={config:null,view:null,appView:'home',filter:'flagged',showAllForks:false,selectedForks:{},activeReason:undefined,openSources:new Set(),advisor:freshAdvisor(),chatOpen:false,tone:'challenge',tableQuote:'a',tableReply:'',tableDraft:'',tableQuestion:'',tableThinking:false,tableListening:false,tableVoiceError:''};
+const state={config:null,view:null,appView:'home',filter:'flagged',showAllForks:false,selectedForks:{},activeReason:undefined,openSources:new Set(),advisor:freshAdvisor(),chatOpen:undefined,tone:'challenge',tableQuote:'a',tableReply:'',tableDraft:'',tableQuestion:'',tableThinking:false,tableListening:false,tableVoiceError:''};
 // 登录账号与「知镜记住的情况」；没登录或没打开记住时，情况只存在这一页（localFacts）。
 const account={available:false,user:null,profile:null,note:''};
 const localFacts=[];
@@ -291,8 +291,8 @@ function opinionStage(block,records){
     const seat=el('button',{type:'button',class:'tone-seat seat-'+index+(selected?' selected':'')+(state.tableThinking?' thinking':''),'aria-pressed':String(selected),'data-tone':tone.id,disabled:state.advisor.pending,title:'用'+tone.label+'的方式说'},[
       state.tableThinking?el('span',{class:'seat-thought','aria-hidden':'true'},[el('i'),el('i'),el('i')]):null,
       el('span',{class:'seat-visual','aria-hidden':'true'},[
-        el('img',{class:'seat-chair',src:'/assets/table/chair.png',alt:'',width:'180',height:'180'}),
-        el('img',{class:'seat-mascot',src:tone.asset,alt:'',width:'168',height:'168'})
+        el('img',{class:'seat-chair',src:'/assets/table/chair.png',alt:'',width:'180',height:'180',loading:'lazy'}),
+        el('img',{class:'seat-mascot',src:tone.asset,alt:'',width:'168',height:'168',loading:'lazy'})
       ]),
       el('span',{class:'tone-name',text:tone.label})
     ]);
@@ -309,8 +309,7 @@ function opinionStage(block,records){
       el('p',{class:'stage-trust',text:state.config?.adviceReady?'AI 演绎，不替你做决定':'已保存的知乎原话 · 可核对来源'})
     ]),
     el('div',{class:'opinion-table'},[
-      el('img',{class:'chair-ring',src:'/assets/table/chair-ring.png',alt:'',width:'1496',height:'1051','aria-hidden':'true'}),
-      el('img',{class:'tabletop-layer',src:'/assets/table/tabletop-light.png',alt:'',width:'1634',height:'847','aria-hidden':'true'}),
+      el('img',{class:'tabletop-layer',src:'/assets/table/tabletop.webp',alt:'',width:'1400',height:'788',loading:'lazy','aria-hidden':'true'}),
       el('div',{class:'table-center'},[
         tableQuoteCard(block.options[0],quotes[0],byId,'a'),
         tableQuoteCard(block.options[1],quotes[1],byId,'b'),

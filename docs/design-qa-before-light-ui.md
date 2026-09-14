@@ -4,18 +4,12 @@
 
 ## 验收对象
 
-- 视觉参考 1：`/var/folders/pm/y71m7hg10tq14mmg35vklbhh0000gn/T/codex-clipboard-a15b90f8-9a6e-46b6-800d-2eada79a03a9.png`
-- 视觉参考 2：`/var/folders/pm/y71m7hg10tq14mmg35vklbhh0000gn/T/codex-clipboard-4da03873-1cfb-4973-b79a-9a24197127b0.png`
-- 视觉参考 3：`/var/folders/pm/y71m7hg10tq14mmg35vklbhh0000gn/T/codex-clipboard-9dda1238-c95e-433e-9143-f61846f44d51.png`
-- 首页构图参考：`/var/folders/pm/y71m7hg10tq14mmg35vklbhh0000gn/T/codex-clipboard-b5e0c21d-ec4f-4db1-ad82-a5e34709eaca.png`
+- 视觉参考 1–3 与首页构图参考：作者本机剪贴板图片，未入库
 - 本地实现：`http://127.0.0.1:4320/`
 - 桌面验收视口：1440 × 1050
 - 移动端验收视口：390 × 844
-- 首页主视觉：`public/assets/home/hero-telescope-v1.png`
-- 观点桌面截图：`qa/blue-table-final.png`
-- 知乎现场截图：`qa/blue-zhihu-final.png`
-- 移动端截图：`qa/blue-mobile-final.png`
-- 参考与实现对比：`qa/comparison-blue-black-white-final.png`
+- 首页主视觉：`public/assets/home/hero-telescope-v1.png`（合并后裁切为 `hero-telescope.webp`，放在搜索首页标题左侧）
+- 过程截图（原 `qa/` 目录，约 7MB）合并时已移出仓库
 
 ## 设计转译结论
 

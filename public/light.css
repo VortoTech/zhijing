@@ -20,11 +20,15 @@ body .global-nav,body[data-view="home"] .global-nav{position:fixed;inset:0 auto 
 .primary-nav button:hover{background:#EAF1FC;}
 button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,textarea:focus-visible,[role="button"]:focus-visible{outline:2px solid var(--a);outline-offset:4px;}
 .home-view{display:block;isolation:auto;overflow:visible;background:#fff;min-height:0;max-width:840px;margin:0 auto;padding:52px 0 0;}
-.search-welcome{text-align:center;}
-.welcome-brand{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:12px;color:var(--a);font-size:30px;font-weight:750;}
-.welcome-brand img{width:100px;height:112px;object-fit:contain;}
-.search-welcome h1{font-family:var(--serif);font-size:clamp(42px,4.4vw,64px);line-height:1.3;font-weight:800;letter-spacing:.015em;margin:0;}
-.home-tagline{font-size:20px;font-weight:400;max-width:none;line-height:1.7;margin:14px 0 26px;color:#66748C;letter-spacing:0;}
+/* 首页：望远镜看山在左，标题在右，下面是搜索。 */
+.search-welcome{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);align-items:center;gap:12px;margin:-28px -40px 10px;text-align:left;}
+/* 原图底色是浅灰：用遮罩把四边淡出到页面白底，不留方框。 */
+.home-art{display:block;width:100%;max-width:400px;justify-self:end;height:auto;aspect-ratio:760/626;object-fit:cover;user-select:none;
+  -webkit-mask-image:radial-gradient(closest-side ellipse at 52% 50%,#000 58%,transparent 100%);mask-image:radial-gradient(closest-side ellipse at 52% 50%,#000 58%,transparent 100%);}
+.welcome-brand{display:flex;align-items:center;gap:10px;margin-bottom:10px;color:var(--a);font-size:26px;font-weight:750;}
+.welcome-brand::before{content:"";width:30px;height:3px;border-radius:99px;background:var(--a);}
+.search-welcome h1{font-family:var(--serif);font-size:clamp(38px,3.7vw,56px);line-height:1.25;font-weight:800;letter-spacing:.015em;margin:0;}
+.home-tagline{font-size:18px;font-weight:400;max-width:none;line-height:1.7;margin:14px 0 0;color:#66748C;letter-spacing:0;}
 .ask{display:block;position:relative;padding:20px 14px 12px 20px;border:1px solid #8EB4FF;border-radius:18px;background:#fff;box-shadow:0 8px 24px -12px #C8DCFA;}
 .ask:focus-within{border-color:var(--a);box-shadow:0 0 0 3px #EDF4FF;}
 .ask textarea{display:block;resize:none;width:100%;min-height:64px;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none;outline:0;font:17px/1.7 var(--sans);color:var(--ink);}
@@ -76,7 +80,8 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,t
 .stage-trust{font-size:11px;margin:0;white-space:normal;}
 .opinion-table{grid-column:1;position:relative;width:100%;height:600px;margin:0;border:0;border-radius:0;padding:0;background:#fff;display:block;}
 .chair-ring{display:none;}
-.tabletop-layer{display:block;position:absolute;inset:60px -2% auto;width:104%;height:485px;filter:none;object-fit:fill;}
+/* 深色桌面与白椅子（沿用 PR #1 的质感）。 */
+.tabletop-layer{display:block;position:absolute;inset:60px -2% auto;width:104%;height:485px;object-fit:fill;filter:sepia(1) saturate(18) hue-rotate(175deg) brightness(.52) contrast(1.35);}
 .table-center{position:absolute;inset:195px 16% auto;display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0;align-content:start;}
 .table-quote{min-height:182px;display:flex;flex-direction:column;gap:9px;padding:15px 13px;border:1px solid #DCE7F5;border-radius:11px;box-shadow:0 6px 12px -8px #7397C8;}
 .table-quote.selected,.table-quote.b.selected{border-color:#7FB0FF;box-shadow:0 0 0 1px #D5E5FF,0 6px 12px -8px #7397C8;}
@@ -89,7 +94,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,t
 .table-objection p{font:400 12px/1.7 var(--sans);-webkit-line-clamp:2;}
 .tone-seat{width:120px;min-height:134px;padding:0;border:0;border-radius:50%;}
 .seat-visual{width:120px;height:118px;}
-.tone-seat .seat-chair{display:block;width:120px;height:118px;left:0;bottom:-10px;filter:none;}
+.tone-seat .seat-chair{display:block;width:120px;height:118px;left:0;bottom:-10px;filter:grayscale(1) contrast(1.03) brightness(1.1) drop-shadow(0 8px 8px rgba(7,10,18,.12));}
 .tone-seat .seat-mascot{width:108px;height:108px;left:6px;top:-6px;filter:drop-shadow(0 3px 3px #00000008);}
 .tone-seat.selected .seat-visual{transform:scale(1.06);}
 .tone-seat.selected{background:#E7F3FF;box-shadow:0 0 0 1px #A2CFFF,0 0 28px #C9E2FB80;}
@@ -158,7 +163,7 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,t
  .home-actions{flex-direction:row;align-items:center;gap:4px;}.language-toggle{align-self:auto;padding:8px;font-size:11px;min-height:36px;}.account{padding:0;gap:5px;max-width:150px;}.account-name{max-width:68px;font-size:11px;}.account-note{position:absolute;left:20px;right:20px;top:66px;background:#F1F6FE;padding:8px 12px;border-radius:10px;}.login-btn{min-height:32px;padding:5px 11px;font-size:11px;}
  .primary-nav{inset:auto 0 0;width:100%;height:calc(66px + env(safe-area-inset-bottom));padding:6px 12px calc(6px + env(safe-area-inset-bottom));display:grid;grid-template-columns:repeat(3,1fr);gap:8px;border-top:1px solid var(--line);background:#FFFFFFF5;z-index:12;}
  .primary-nav button{min-height:48px;padding:3px 6px;display:flex;flex-direction:column;gap:3px;justify-content:center;font-size:11px;border-radius:10px;}.primary-nav button[aria-current]{background:transparent;}.primary-nav img{width:23px;height:23px;}
- .home-view{padding:13px 0 0;}.welcome-brand{margin:0 0 9px;}.welcome-brand img{width:78px;height:88px;}.welcome-brand span{display:none;}.search-welcome h1{font-size:clamp(28px,8.3vw,40px);font-weight:800;letter-spacing:0;}.home-tagline{font-size:14px;margin:12px 0 20px;line-height:1.7;}
+ .home-view{padding:13px 0 0;}.welcome-brand{margin:0 0 9px;}.welcome-brand img{width:78px;height:88px;}.welcome-brand span{display:none;}.search-welcome h1{font-size:clamp(28px,8.3vw,40px);font-weight:800;letter-spacing:0;}.home-tagline{font-size:14px;margin:12px 0 20px;line-height:1.7;}.search-welcome{display:block;margin:0;text-align:center;}.home-art{width:min(100%,340px);aspect-ratio:16/10;object-position:58% 46%;margin:0 auto 4px;}.welcome-brand{display:none;}
  .ask{border-radius:17px;padding:14px 12px 11px;}.ask textarea{font-size:14px;min-height:58px;}.search-actions{justify-content:space-between;gap:10px;margin-top:6px;}.search-icon{width:21px;height:21px;margin-left:4px;}.ask .btn.big{min-height:42px;padding:0 20px;font-size:14px;border-radius:15px;}
  #ask-note{font-size:10px;margin-top:7px;min-height:16px;}.examples{margin-top:24px;}.examples h2{font-size:17px;gap:9px;margin:0 0 8px;}.example-badge{font-size:10px;}
  #examples{grid-template-columns:1fr;gap:0;}#examples .topic-recommendation{min-height:69px;padding:11px 0;}.topic-copy{gap:2px;}.topic-copy strong{font-size:14px;}.topic-copy>span{font-size:12px;}.home-proof{font-size:10px;margin:24px 0 0;padding-top:13px;}
