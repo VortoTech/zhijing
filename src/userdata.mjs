@@ -21,6 +21,14 @@ export const contentId=url=>String(url).match(/answer\/(\d+)/)?.[1]
   ||String(url).match(/\/pin\/(\d+)/)?.[1]
   ||null;
 
+// 内容类别与编号一起匹配，避免回答、文章、想法恰好同号时错挂评论。
+function contentKey(value){
+  const url=safeZhihuUrl(value);
+  if(!url)return null;
+  const path=new URL(url).pathname;
+  return path.match(/\/answer\/\d+/)?.[0]||path.match(/\/(?:p|pin)\/\d+/)?.[0]||path;
+}
+
 function normalizeItem(item,types){
   const url=safeZhihuUrl(item?.Url);
   if(!url||!types.includes(item.ContentType))return null;
@@ -31,7 +39,7 @@ function normalizeItem(item,types){
   return {
     type:item.ContentType,url,title:title.slice(0,120),summary,
     likeCount:Number(item.LikeCount)||0,
-    commentCount:Number(item.CommentCount)||0,
+    commentCount:item.CommentCount!=null&&Number.isFinite(Number(item.CommentCount))?Math.max(0,Number(item.CommentCount)):null,
     favTime:Number(item.FavTime)||0,
     author:typeof item.Author?.Name==='string'?item.Author.Name.slice(0,40):null
   };
@@ -55,7 +63,8 @@ async function fetchUserList(path,params,normalize,env,token,request){
   }
   if(body?.Code===20001)throw fail('auth','知乎授权已失效');
   if(body?.Code!==0||!Array.isArray(body.Data?.Items))throw fail('upstream','读取知乎数据失败');
-  return body.Data.Items.map(normalize).filter(Boolean);
+  const seen=new Set();
+  return body.Data.Items.map(normalize).filter(Boolean).filter(item=>{const key=contentKey(item.url);if(seen.has(key))return false;seen.add(key);return true;});
 }
 
 // 近期收藏：用于「从收藏里挑问题」和「收藏体检」。
@@ -116,10 +125,9 @@ export function sentenceOf(summary){
 // 体检（收藏或本人内容）：对上的内容拿到精选评论，走同一套异议归类与逐字校验；对不上的如实标出。
 export async function runCheckup(items,env,{search=searchOne,classifier=classify,spacingMs=search===searchOne?SEARCH_SPACING_MS:0}={}){
   const targets=items.slice(0,CHECKUP_LIMIT);
-  const found=new Map();
+  const found=new Map(),searchErrors=new Map();
   let searched=0;
-  for(const item of targets.values()){
-    const i=targets.indexOf(item);
+  for(const [i,item] of targets.entries()){
     const id=contentId(item.url);
     // 原站评论数为 0 的内容不可能有人当场反驳，不去搜，直接标「还没有人评论」。
     if(!id||item.commentCount===0)continue;
@@ -128,37 +136,40 @@ export async function runCheckup(items,env,{search=searchOne,classifier=classify
     let raw=[];
     try{raw=await search(query,env);}
     catch(error){
-      if(error.rateLimited){
+      if(error.rateLimited||error.status===429){
         await sleep(spacingMs*2);
-        try{raw=await search(query,env);}catch{}
-      }
+        try{raw=await search(query,env);}catch{searchErrors.set(i,true);}
+      }else searchErrors.set(i,true);
     }
-    const hit=raw.find(r=>String(r.ContentID)===id||contentId(r.Url)===id);
+    const hit=raw.find(r=>contentKey(r.Url)===contentKey(item.url));
     const record=hit?extractItem(hit):null;
     if(record)found.set(i,record);
   }
 
   const withComments=[...found.values()].filter(r=>r.comments.length);
   const topic={id:'my-items',title:'用户收藏或发布的多条内容（各自回答自己标题里的问题）',kind:'opinion',focusTerms:[],excerptTerms:[],queries:[],conditions:[],situationFields:[]};
-  const classified=withComments.length?await classifier(withComments,topic,env):[];
+  let classified=[];
+  try{classified=withComments.length?await classifier(withComments,topic,env):[];}catch{/* 保留检索到的记录，逐条标为未完成，允许重试。 */}
   const byId=new Map(classified.map(r=>[r.id,r]));
 
   const results=targets.map((item,i)=>{
     const record=found.get(i);
     const analysed=record?byId.get(record.id):null;
-    const status=!record?(item.commentCount===0?'uncommented':'unmatched')
+    const status=!record?(searchErrors.has(i)?'search_failed':item.commentCount===0?'uncommented':'unmatched')
       :!record.comments.length?'no_comments'
-      :['failed','partial'].includes(analysed?.analysis?.status)&&!analysed?.objections?.length?'incomplete'
+      :(!analysed||analysed.analysis?.status!=='complete')&&!analysed?.objections?.length?'incomplete'
       :analysed?.objections?.length?'pushback':'quiet';
     return {
       title:item.title,url:item.url,type:item.type,author:item.author,likeCount:item.likeCount,commentCount:item.commentCount,status,
+      incomplete:searchErrors.has(i)||!!record?.comments.length&&analysed?.analysis?.status!=='complete',
       objections:(analysed?.objections||[]).map(o=>({type:o.type,typeLabel:o.typeLabel,commentText:o.commentText,targetClaim:o.targetClaim||''}))
     };
   });
-  const order={pushback:0,incomplete:1,quiet:2,no_comments:3,unmatched:4,uncommented:5};
+  const order={pushback:0,incomplete:1,search_failed:1,quiet:2,no_comments:3,unmatched:4,uncommented:5};
   results.sort((a,b)=>order[a.status]-order[b.status]);
   return {
     checked:targets.length,total:items.length,matched:found.size,withComments:withComments.length,
+    incomplete:results.filter(r=>r.incomplete).length,failedSearches:searchErrors.size,
     pushback:results.filter(r=>r.status==='pushback').length,items:results
   };
 }

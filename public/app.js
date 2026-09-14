@@ -19,14 +19,14 @@ const isSaved=question=>EXAMPLES.some(e=>e.saved&&e.question===question);
 const MAX_FORKS=3;
 
 const TONE_PERSONAS=[
-  {id:'rational',label:'理性分析',asset:'/assets/tone-hosts/rational.png',prompt:'请用理性、克制、分点清晰的语气回应',promptEn:'Respond rationally and calmly, with clearly separated points.',preview:'把情绪先放一边：这句话只在你能承担波动时成立。'},
-  {id:'sharp',label:'犀利反问',asset:'/assets/tone-hosts/sharp.png',prompt:'请用犀利但不刻薄的反问语气回应',promptEn:'Respond with incisive but not hostile questions.',preview:'如果平台只给名头、不给成长，它凭什么就是更好的选择？'},
-  {id:'empathy',label:'温柔共情',asset:'/assets/tone-hosts/empathy.png',prompt:'请用温柔共情、先接住情绪的语气回应',promptEn:'Respond with gentle empathy and acknowledge the emotion first.',preview:'你担心选错很正常，先确认哪一种后悔是你更能承受的。'},
-  {id:'humor',label:'幽默解构',asset:'/assets/tone-hosts/humor.png',prompt:'请用轻松幽默但不油滑的语气回应',promptEn:'Respond with light, thoughtful humor without being glib.',preview:'高薪像过山车，低薪大厂像地铁：一个刺激，一个也可能坐过站。'},
-  {id:'realist',label:'现实主义',asset:'/assets/tone-hosts/realist.png',prompt:'请用务实、具体、重视约束条件的语气回应',promptEn:'Respond pragmatically and concretely, focusing on real constraints.',preview:'先算三件事：现金流、岗位核心度，以及六个月后的可替代性。'},
-  {id:'longterm',label:'长期主义',asset:'/assets/tone-hosts/longterm.png',prompt:'请用长期主义、关注能力复利的语气回应',promptEn:'Respond from a long-term perspective, focusing on compounding capabilities.',preview:'别只看第一年，把三年后的能力复利也一起放进来。'},
-  {id:'challenge',label:'反方挑战',asset:'/assets/tone-hosts/challenge.png',prompt:'请站在反方挑战我，但必须基于现有原话和评论区反驳',promptEn:'Challenge me from the opposing side, grounded only in the source quotes and comment objections.',preview:'如果大厂只是更大的螺丝钉，所谓平台真的值得用成长速度去换吗？'},
-  {id:'socratic',label:'苏格拉底追问',asset:'/assets/tone-hosts/socratic.png',prompt:'请用苏格拉底式追问，不直接给结论',promptEn:'Use Socratic questions and do not jump to a conclusion.',preview:'你说想要稳定——真正害怕的是收入波动，还是选择不被认可？'}
+  {id:'rational',label:'理性分析',asset:'/assets/tone-hosts/rational.png'},
+  {id:'sharp',label:'犀利反问',asset:'/assets/tone-hosts/sharp.png'},
+  {id:'empathy',label:'温柔共情',asset:'/assets/tone-hosts/empathy.png'},
+  {id:'humor',label:'幽默解构',asset:'/assets/tone-hosts/humor.png'},
+  {id:'realist',label:'现实主义',asset:'/assets/tone-hosts/realist.png'},
+  {id:'longterm',label:'长期主义',asset:'/assets/tone-hosts/longterm.png'},
+  {id:'challenge',label:'反方挑战',asset:'/assets/tone-hosts/challenge.png'},
+  {id:'socratic',label:'苏格拉底追问',asset:'/assets/tone-hosts/socratic.png'}
 ];
 const toneById=id=>TONE_PERSONAS.find(t=>t.id===id)||TONE_PERSONAS[6];
 
@@ -39,7 +39,8 @@ const localFacts=[];
 let localSeq=0,boardById=new Map();
 const NO_PB={of:()=>[]};
 function freshAdvisor(){return {turns:[],pending:false,draft:'',refocus:false};}
-let openCards=null,ticker=null,tableThinkTimer=null,speechRecognition=null;
+let openCards=null,ticker=null,speechRecognition=null;
+let accountRevision=0;
 const $=id=>document.getElementById(id);
 function el(tag,props={},children=[]){
   const node=document.createElement(tag);
@@ -55,7 +56,7 @@ const clear=node=>node.replaceChildren();
 const button=(text,action,props={})=>{const b=el('button',{type:'button',text,...props});b.addEventListener('click',action);return b;};
 const cleanTitle=title=>title.replace(/\s*-\s*知乎$/,'');
 
-const APP_VIEWS=new Set(['home','table','zhihu']);
+const APP_VIEWS=new Set(['home','table','zhihu','mine']);
 function viewFromLocation(){
   const named=location.hash.replace(/^#/,'');
   return APP_VIEWS.has(named)?named:(new URLSearchParams(location.search).has('q')?'zhihu':'home');
@@ -66,10 +67,17 @@ function setAppView(next,{sync=true}={}){
   $('home-view').hidden=name!=='home';
   $('table-view').hidden=name!=='table';
   $('zhihu-view').hidden=name!=='zhihu';
+  $('mine-view').hidden=name!=='mine';
+  // Keep one search form and one draft while moving between home and results.
+  (name==='zhihu'?$('result-search-slot'):$('home-search-slot')).append($('search-panel'));
+  for(const button of document.querySelectorAll('[data-view-target]')){
+    const selected=button.dataset.viewTarget===(name==='zhihu'?'home':name);
+    if(selected)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
+  }
   document.body.dataset.view=name;
   if(sync){
     const url=new URL(location.href);
-    url.hash=name==='home'?'':name;
+    url.hash=name==='home'?(url.searchParams.has('q')?'home':''):name;
     history.pushState({appView:name},'',url);
   }
   renderAdvisor();
@@ -128,6 +136,9 @@ function syncUrl(view){
     history.replaceState(null,'',url);
   }catch{}
 }
+function updateSearchNote(){
+  $('ask-note').textContent=state.config?.askReady?'':ui('当前为示例模式，可阅读已保存的讨论；实时搜索尚未开放。');
+}
 function markExamples(){
   for(const b of $('examples').querySelectorAll('button'))b.setAttribute('aria-pressed',String(b.dataset.question===state.view?.question));
 }
@@ -135,10 +146,15 @@ function markExamples(){
 async function load(view,refresh=false){
   state.view=view;state.filter='flagged';state.showAllForks=false;state.selectedForks={};state.activeReason=undefined;
   state.openSources=new Set();state.advisor=freshAdvisor();state.tableQuote='a';state.tableReply='';state.tableDraft='';state.tableQuestion='';state.tableThinking=false;state.tableVoiceError='';
-  clearTimeout(tableThinkTimer);tableThinkTimer=null;
-  $('q').value=view.question;$('ask-note').textContent='';
+  $('q').value=view.question;updateSearchNote();
+  closePost();
   syncUrl(view);markExamples();
   const live=view.kind==='ask';
+  if(live&&!state.config?.askReady&&!isSaved(view.question)){
+    session.cancel();stopTicker();setBusy(false);clearResults();clear($('error-slot'));clear($('status'));
+    $('ask-note').textContent=ui('当前为示例模式，无法检索这个新问题。请选择下面的已保存示例。');
+    return;
+  }
   const ticket=session.begin(live?'ask:'+view.question:view.topicId+':snapshot');
   openCards=null;
   clearResults();clear($('error-slot'));
@@ -205,36 +221,33 @@ function firstTableQuote(block,sideIndex){
 function tableQuoteCard(option,e,byId,side){
   const record=e?byId.get(e.recordId):null;
   const selected=state.tableQuote===side;
-  const node=el('article',{class:'table-quote '+side+(selected?' selected':''),tabindex:'0',role:'button','aria-pressed':String(selected),'data-table-quote':side},[
-    el('p',{class:'table-quote-side',text:'知乎 · 观点 '+side.toUpperCase()}),
+  const node=el('article',{class:'table-quote '+side+(selected?' selected':''),tabindex:'0',role:'button','aria-pressed':String(selected),'data-table-quote':side,title:'选择并核对原话','aria-disabled':String(state.advisor.pending)},[
+    el('p',{class:'table-quote-side',text:'知乎 · '+option}),
     el('h4',{text:'“'+(e?.text||`关于「${option}」的原话暂时缺席`)+'”'}),
-    el('p',{class:'table-quote-meta',text:record?`${record.author||'匿名用户'} · ${record.voteUp??'—'} 赞`:'等待更多原话'})
+    el('p',{class:'table-quote-meta',text:record?`${attribution(e,record)} · ${ui('核对原话')}`:'等待更多原话'})
   ]);
-  const select=()=>{state.tableQuote=side;state.tableReply='';render();requestAnimationFrame(()=>document.querySelector(`[data-table-quote="${side}"]`)?.focus());};
+  const select=()=>{
+    if(state.advisor.pending)return;
+    state.tableQuote=side;state.tableReply='';state.tableQuestion='';render();
+    const trigger=document.querySelector(`[data-table-quote="${side}"]`);
+    if(record&&e)openPost(e,record,trigger);else trigger?.focus();
+  };
   node.addEventListener('click',select);
   node.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();select();}});
   return node;
 }
-function finishLocalTableReply(){
-  state.tableThinking=false;
-  state.tableReply=toneById(state.tone).preview;
-  render();
-  requestAnimationFrame(()=>$('table-question')?.focus());
-}
 function askFromTable(activeQuote,message=state.tableDraft){
   const question=message.trim();
   if(!question){$('table-question')?.focus();return;}
-  clearTimeout(tableThinkTimer);
-  state.tableQuestion=question;state.tableDraft='';state.tableReply='';state.tableThinking=true;state.tableVoiceError='';
-  render();
-  const quote=activeQuote?.text?.length>90?activeQuote.text.slice(0,90)+'…':activeQuote?.text||'我刚选中的这条观点';
-  tableThinkTimer=setTimeout(()=>{
-    tableThinkTimer=null;
-    if(state.config?.adviceReady)askAdvisor(i18n.language==='en'
-      ?`My follow-up is: “${question}” Please answer around “${quote}” using the source quotes from both sides of the table.`
-      :`我继续追问：「${question}」请围绕「${quote}」并结合桌面两边原话回答。`,{inlineTable:true});
-    else finishLocalTableReply();
-  },1100);
+  if(state.advisor.pending)return;
+  state.tableQuestion=question;state.tableDraft=question;state.tableReply='';state.tableVoiceError='';
+  if(!state.config?.adviceReady){
+    state.tableThinking=false;
+    state.tableReply='当前未开启 AI 陪伴，无法生成本次回答。问题已保留；点击桌面原话可核对全文，或在知乎现场选择条件后阅读两边材料。';
+    render();return;
+  }
+  state.tableThinking=true;
+  askAdvisor(question,{inlineTable:true,quote:activeQuote});
 }
 function startTableVoice(){
   const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -252,14 +265,14 @@ function startTableVoice(){
   try{recognition.start();}catch{state.tableListening=false;state.tableVoiceError='语音输入没有启动，请稍后再试。';render();}
 }
 function tableComposer(activeQuote){
-  const input=el('input',{id:'table-question',type:'text',maxlength:'120',autocomplete:'off',enterkeyhint:'send',placeholder:'继续追问，比如：如果我更怕三年后后悔呢？'});
+  const input=el('input',{id:'table-question',type:'text',maxlength:'300',autocomplete:'off',enterkeyhint:'send',placeholder:'继续追问，比如：如果我更怕三年后后悔呢？'});
   input.value=state.tableDraft;
   input.addEventListener('input',()=>{state.tableDraft=input.value;});
   const form=el('form',{class:'table-composer'},[
     el('label',{for:'table-question',class:'sr-only',text:'继续追问'}),
     input,
-    button(state.tableListening?'停止':'语音',startTableVoice,{class:'table-voice','aria-pressed':String(state.tableListening),disabled:state.tableThinking}),
-    el('button',{type:'submit',class:'table-send',disabled:state.tableThinking,text:state.tableThinking?'思考中':'发送'})
+    (()=>{const voice=button('',startTableVoice,{class:'table-voice','aria-label':state.tableListening?'停止':'语音','aria-pressed':String(state.tableListening),disabled:state.advisor.pending});voice.append(el('img',{src:'/assets/icons/microphone.svg',alt:'',width:20,height:20}));return voice;})(),
+    el('button',{type:'submit',class:'table-send',disabled:state.advisor.pending,text:state.tableThinking?'思考中':'发送'})
   ]);
   form.addEventListener('submit',event=>{event.preventDefault();askFromTable(activeQuote,input.value);});
   return el('div',{class:'table-ask'},[
@@ -270,17 +283,12 @@ function tableComposer(activeQuote){
 function opinionStage(block,records){
   if(block?.status!=='complete'||!block.options?.length)return null;
   const byId=new Map(records.map(r=>[r.id,r]));
-  const pb=assignPushback(block,byId);
   const quotes=[firstTableQuote(block,0),firstTableQuote(block,1)];
   const active=quotes[state.tableQuote==='b'?1:0]||quotes.find(Boolean);
-  let objection=null;
-  for(const e of evidenceOf(block)){
-    const found=pb.of(e)[0];
-    if(found){objection=found;break;}
-  }
+  const objection=pushbackFor(byId.get(active?.recordId),active)[0]||null;
   const seats=TONE_PERSONAS.map((tone,index)=>{
     const selected=tone.id===state.tone;
-    const seat=el('button',{type:'button',class:'tone-seat seat-'+index+(selected?' selected':'')+(state.tableThinking?' thinking':''),'aria-pressed':String(selected),'data-tone':tone.id,title:'用'+tone.label+'的方式说'},[
+    const seat=el('button',{type:'button',class:'tone-seat seat-'+index+(selected?' selected':'')+(state.tableThinking?' thinking':''),'aria-pressed':String(selected),'data-tone':tone.id,disabled:state.advisor.pending,title:'用'+tone.label+'的方式说'},[
       state.tableThinking?el('span',{class:'seat-thought','aria-hidden':'true'},[el('i'),el('i'),el('i')]):null,
       el('span',{class:'seat-visual','aria-hidden':'true'},[
         el('img',{class:'seat-chair',src:'/assets/table/chair.png',alt:'',width:'180',height:'180'}),
@@ -288,31 +296,32 @@ function opinionStage(block,records){
       ]),
       el('span',{class:'tone-name',text:tone.label})
     ]);
-    seat.addEventListener('click',()=>{state.tone=tone.id;state.tableReply=tone.preview;render();requestAnimationFrame(()=>document.querySelector(`[data-tone="${tone.id}"]`)?.focus());});
+    seat.addEventListener('click',()=>{state.tone=tone.id;state.tableReply='';state.tableQuestion='';render();requestAnimationFrame(()=>document.querySelector(`[data-tone="${tone.id}"]`)?.focus());});
     return seat;
   });
-  const speech=state.tableThinking?'8 个看山正在从不同角度想…':state.tableReply||toneById(state.tone).preview;
+  const speech=state.tableThinking?'知镜正在结合当前原话和你的问题思考…':state.tableReply||(state.config?.adviceReady?'已选择当前语气。输入问题后，知镜会结合当前话题的原话回答。':'当前为示例阅读，AI 陪伴尚未开启。点击桌面原话可核对来源。');
   return el('section',{class:'opinion-stage','aria-labelledby':'table-title'},[
     el('div',{class:'stage-heading'},[
       el('div',{},[
         el('h3',{id:'table-title',text:'同一句话，换个角度听。'}),
-        el('p',{text:'选一个看山，让它换个语气说。'})
+        el('p',{text:'同一个问题，多种视角。选择一个看法，让它换个角度说。'})
       ]),
-      el('p',{class:'stage-trust',text:'AI 演绎，不替你做决定'})
+      el('p',{class:'stage-trust',text:state.config?.adviceReady?'AI 演绎，不替你做决定':'已保存的知乎原话 · 可核对来源'})
     ]),
     el('div',{class:'opinion-table'},[
       el('img',{class:'chair-ring',src:'/assets/table/chair-ring.png',alt:'',width:'1496',height:'1051','aria-hidden':'true'}),
-      el('img',{class:'tabletop-layer',src:'/assets/table/tabletop.png',alt:'',width:'1634',height:'847','aria-hidden':'true'}),
+      el('img',{class:'tabletop-layer',src:'/assets/table/tabletop-light.png',alt:'',width:'1634',height:'847','aria-hidden':'true'}),
       el('div',{class:'table-center'},[
         tableQuoteCard(block.options[0],quotes[0],byId,'a'),
         tableQuoteCard(block.options[1],quotes[1],byId,'b'),
         objection?el('aside',{class:'table-objection'},[
-          el('span',{text:'评论 · 有人反驳'}),
+          el('span',{text:ui(objection.typeLabel||'读者异议')+' · '+ui(objection.direct?'针对这句话':'针对这条回答')}),
           el('p',{text:'“'+objection.commentText+'”'})
         ]):null
       ]),
       ...seats
     ]),
+    el('aside',{class:'table-conversation'},[
     el('div',{class:'table-response'+(state.tableThinking?' thinking':''),'aria-live':'polite'},[
       el('img',{src:toneById(state.tone).asset,alt:'',width:'52',height:'52'}),
       el('div',{},[
@@ -321,7 +330,11 @@ function opinionStage(block,records){
         el('p',{text:speech})
       ])
     ]),
-    tableComposer(active)
+    el('div',{class:'table-followups'},[el('h4',{text:'也可以问'}),...QUICK_ASKS.map(question=>button(question,()=>{state.tableDraft=question;render();requestAnimationFrame(()=>$('table-question')?.focus());},{class:'followup-question',disabled:state.advisor.pending}))]),
+    tableComposer(active),
+    el('p',{class:'conversation-trust',text:'不替你做决定，只提供多角度的分析。'})
+    ]),
+    button('补充适用条件',()=>{setAppView('zhihu');const board=document.querySelector('.full-board');if(board)board.open=true;$('forks-title')?.scrollIntoView({behavior:'smooth',block:'start'});},{class:'table-conditions'})
   ]);
 }
 function pushbackChip(evidence,pb){
@@ -358,6 +371,7 @@ function zhihuAnchor(record,e,label,cls='src'){
   }catch{return null;}
 }
 let postReturnFocus=null;
+const postInert=new Map();
 function openPost(e,record,trigger){
   const drawer=$('post-drawer');
   const quote=e.kind==='answer'?e.text:null;
@@ -389,7 +403,7 @@ function openPost(e,record,trigger){
         button('关闭',closePost,{class:'drawer-close','aria-label':'关闭原帖'})
       ]),
       el('div',{class:'drawer-body'},[
-        el('p',{class:'note',text:'以下是知乎接口返回的正文（可能是摘要）。'+(quote?'黄色是被引用的那一句，程序按编号从原文取出，一字未改。':'被引用的是下面高亮的那条评论。')}),
+        el('p',{class:'note',text:'以下是知乎接口返回的正文（可能是摘要）。'+(quote?'高亮的是被引用的那一句，程序按编号从原文取出，一字未改。':'被引用的是下面高亮的那条评论。')}),
         el('div',{class:'post-text'},paragraphs),
         el('h3',{class:'post-sub',text:'这条回答的精选评论'}),
         comments.length?el('ul',{class:'post-comments'},comments):el('p',{class:'note',text:'这次没有取到这条回答的评论。'})
@@ -404,6 +418,10 @@ function openPost(e,record,trigger){
       ])
     ])
   );
+  for(const node of document.body.children){
+    if(node===drawer||['SCRIPT','STYLE'].includes(node.tagName))continue;
+    if(!postInert.has(node))postInert.set(node,node.inert);node.inert=true;
+  }
   drawer.hidden=false;
   document.body.classList.add('drawer-open');
   postReturnFocus=trigger||null;
@@ -415,10 +433,18 @@ function closePost(){
   if(drawer.hidden)return;
   drawer.hidden=true;clear(drawer);
   document.body.classList.remove('drawer-open');
-  postReturnFocus?.focus?.();postReturnFocus=null;
+  for(const [node,inert] of postInert)node.inert=inert;postInert.clear();
+  if(postReturnFocus?.isConnected)postReturnFocus.focus();postReturnFocus=null;
 }
 $('post-drawer').addEventListener('click',event=>{if(event.target.dataset?.close)closePost();});
 document.addEventListener('keydown',event=>{
+  const drawer=$('post-drawer');
+  if(!drawer.hidden&&event.key==='Tab'){
+    const focusable=[...drawer.querySelectorAll('button:not(:disabled),a[href],[tabindex="0"]')];
+    const first=focusable[0],last=focusable.at(-1);
+    if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}
+    else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}
+  }
   if(event.key!=='Escape')return;
   if(!$('post-drawer').hidden)closePost();
   else if(state.chatOpen&&!wideChat()&&!$('advisor').hidden)closeChat();
@@ -515,6 +541,7 @@ function comparisonSections(block,records,sample){
       const next={...state.selectedForks};
       if(next[forkIndex]===branchIndex)delete next[forkIndex];else next[forkIndex]=branchIndex;
       state.selectedForks=next;
+      if(next[forkIndex]!=null)state.openSources.add(forkIndex);
       render();
       document.querySelector(`[data-choice="${forkIndex}-${branchIndex}"]`)?.focus();
     };
@@ -522,7 +549,7 @@ function comparisonSections(block,records,sample){
     parts.push(el('section',{class:'board-section','aria-labelledby':'forks-title'},[
       el('h3',{id:'forks-title',class:'board-label',text:'哪些情况更接近你'}),
       el('div',{class:'guide '+guidance.state,role:'status'},[
-        el('h4',{text:guidance.title}),el('p',{text:guidance.message}),
+        el('h4',{text:guidance.title}),el('p',{text:[guidance.message,...guidance.tasks.map(task=>task.text)].join(' ')}),
         guidance.groups.length?el('div',{class:'guide-groups'},guidance.groups.map(group=>el('span',{class:'guide-pick '+sideOf(group.option)},[
           el('strong',{text:group.option+'：'}),group.matches.map(m=>m.when).join('、')
         ]))):null,
@@ -652,7 +679,7 @@ function render(){
   $('table-result-head').replaceChildren(
     el('span',{class:'table-topic-kicker',text:'正在讨论'}),
     el('strong',{text:data.meta.question||data.topic.title}),
-    button('换一个话题',()=>setAppView('zhihu'),{class:'switch-view compact'})
+    button('换一个话题',()=>setAppView('home'),{class:'switch-view compact'})
   );
   const table=opinionStage(comparison,data.records);
   $('table-stage').replaceChildren(table||el('div',{class:'board-empty',text:'这个话题暂时还没有可以摆上桌的双边观点。'}));
@@ -703,21 +730,24 @@ const confirmedFacts=()=>allFacts().filter(f=>f.status==='confirmed');
 let factNote='',inferState={running:false,note:'',relogin:false},deleteArmed=false;
 
 async function profileCall(path,body,method='POST'){
+  const revision=accountRevision;
   const res=await fetch(path,{method,headers:{'content-type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(60000)});
   const data=await res.json().catch(()=>({}));
+  if(revision!==accountRevision)throw Object.assign(new Error('登录状态已变化，请重试。'),{stale:true});
   if(!res.ok)throw Object.assign(new Error(data.error||'没能保存，请稍后再试。'),{relogin:!!data.relogin});
   return data;
 }
 async function loadProfile(){
+  const revision=accountRevision;
   account.profile=null;
   if(account.user?.canRemember){
-    try{account.profile=await profileCall('/api/profile',undefined,'GET');}catch{account.profile=null;}
+    try{account.profile=await profileCall('/api/profile',undefined,'GET');}catch{if(revision!==accountRevision)return;account.profile=null;}
   }
   renderAdvisor();renderMine();
 }
 async function factAction(run){
   factNote='';
-  try{await run();}catch(error){factNote=error.message||'没能保存，请稍后再试。';}
+  try{await run();}catch(error){if(error.stale)return;factNote=error.message||'没能保存，请稍后再试。';}
   renderAdvisor();renderMine();
 }
 const isLocal=fact=>String(fact.id).startsWith('l');
@@ -755,7 +785,7 @@ function inferFromCollections(){
     if(personalized())account.profile={personalize:data.personalize,consentAt:data.consentAt,facts:data.facts,decisions:data.decisions};
     else for(const p of data.proposals)if(!localFacts.some(f=>f.key===p.key&&f.value===p.value))localFacts.push({id:'l'+(++localSeq),key:p.key,value:p.value,source:'inferred',status:'pending',evidenceRef:p.evidenceRef});
     inferState={running:false,relogin:false,note:data.proposals.length?`从你最近的收藏里推测了 ${data.proposals.length} 条，你确认之后才会用上。`:'从你最近的收藏里没看出和做选择有关的情况。'};
-  }).catch(error=>{inferState={running:false,note:error.message,relogin:!!error.relogin};})
+  }).catch(error=>{if(!error.stale)inferState={running:false,note:error.message,relogin:!!error.relogin};})
     .finally(()=>{renderMine();renderAdvisor();});
 }
 function deleteEverything(){
@@ -803,7 +833,7 @@ function memoryBlock(){
       p.decisions.length?el('div',{class:'mine-decisions'},[
         el('p',{class:'note',text:'最近想过的问题：'}),
         el('div',{class:'chips'},p.decisions.map(d=>button(d.question.length>24?d.question.slice(0,24)+'…':d.question,()=>{
-          try{load(viewFor(normalizeQuestion(d.question)));}catch(error){$('ask-note').textContent=error.message;}
+          try{openQuestion(viewFor(normalizeQuestion(d.question)));}catch(error){$('ask-note').textContent=error.message;}
         },{class:'chip-btn',title:d.note?'上次知镜的建议：'+d.note:d.question})))
       ]):null,
       el('div',{class:'row'},[inferBtn,button('关掉并删除这些情况',()=>setPersonalize(false),{class:'link-btn'}),deleteBtn]),
@@ -853,7 +883,7 @@ async function chatRequest(path,body,turn,onOk){
   advisor.pending=false;
   render();
 }
-async function askAdvisor(message,{inlineTable=false}={}){
+async function askAdvisor(message,{inlineTable=false,quote=null}={}){
   const view=state.view,advisor=state.advisor;
   if(!view||advisor.pending||!state.config?.adviceReady||!message)return;
   const tone=toneById(state.tone);
@@ -861,13 +891,12 @@ async function askAdvisor(message,{inlineTable=false}={}){
     .flatMap(t=>[{role:'user',text:t.message},t.reply?{role:'assistant',text:turnSummary(t.reply)}:null]).filter(Boolean);
   const displayMessage=ui(message);
   const turn={kind:'advice',message:displayMessage,reply:null,error:''};
-  const styledMessage=i18n.language==='en'
-    ?`${tone.promptEn} Reply in English. Keep Zhijing within its boundary: do not make the decision for the user and rely only on source quotes.\n${displayMessage}`
-    :`${tone.prompt}。保持知镜“不替用户做决定、只依据原话”的边界。\n${message}`;
-  await chatRequest('/api/advice',{ref:viewRef(view),selections:selectionsOf(),facts:factsOf(),history,message:styledMessage,tone:tone.id},turn,data=>{turn.reply=data;});
+  await chatRequest('/api/advice',{ref:viewRef(view),selections:selectionsOf(),facts:factsOf(),history,message,tone:tone.id,language:i18n.language,focus:quote},turn,data=>{turn.reply=data;});
+  if(state.advisor!==advisor||state.view!==view)return;
   if(inlineTable){
     state.tableThinking=false;
-    state.tableReply=turn.reply?turnSummary(turn.reply):tone.preview;
+    state.tableReply=turn.reply?turnSummary(turn.reply):(turn.error||'知镜这次没能回复，请稍后再试。');
+    if(turn.reply&&state.tableDraft===message)state.tableDraft='';
     if(turn.error)state.tableVoiceError=turn.error;
     render();requestAnimationFrame(()=>$('table-question')?.focus());
   }
@@ -1016,14 +1045,15 @@ function peerCard(peer){
   ]);
 }
 function peersMsg(r){
+  const note=r.quota?'检索额度已用完，本次仅展示已取得的材料。':r.failed?'部分检索未完成，本次材料可能不完整，可以重试。':'';
   if(!r.peers.length)return botMsg([
     el('p',{text:'这次没找到处境和你明显相似的人。'}),
-    el('p',{class:'bot-basis',text:'把情况说得具体一点（城市、行业、家里能支持多久），我再找一次。'+(r.quota?'今天的检索次数用完了，这次只翻了原来的评论。':'')})
+    el('p',{class:'bot-basis',text:'把情况说得具体一点（城市、行业、家里能支持多久），我再找一次。'+ui(note)})
   ]);
   return botMsg([
-    el('p',{text:r.queries.length?`按你的 ${r.queries.length} 条情况，我在知乎找到 ${r.peers.length} 个处境和你相似的人：`:`我在原来那批回答的评论里找到 ${r.peers.length} 个处境和你相似的人：`}),
+    el('p',{text:r.queries.length?`按你的 ${r.queries.length} 条情况，我在知乎找到 ${r.peers.length} 个处境和你相似的人：`:`我在已有回答和评论里找到 ${r.peers.length} 个处境和你相似的人：`}),
     ...r.peers.map(peerCard),
-    el('p',{class:'bot-basis',text:'只收说话人讲自己经历的原话，一字未改；「哪里相似」是我的判断。他们后来怎么选的，看「经历与选择」。'})
+    el('p',{class:'bot-basis',text:ui('只收说话人讲自己经历的原话，一字未改；「哪里相似」是我的判断。他们后来怎么选的，看「经历与选择」。')+ui(note)})
   ],'wide');
 }
 
@@ -1146,10 +1176,21 @@ function renderAdvisor(){
   }
 }
 
+const EXAMPLE_DESCRIPTIONS={
+  '考研还是直接工作':'继续深造，还是尽早进入职场？',
+  '毕业去大城市还是回老家':'在大城市发展，还是回家乡生活？',
+  '研究生毕业去国企还是私企':'更稳定的选择，还是更大的发展空间？',
+  '第一份工作选高薪小公司还是低薪大厂':'高薪和成长，哪个更重要？'
+};
+function openQuestion(view){setAppView('zhihu');return load(view);}
 function renderExamples(){
-  $('examples').replaceChildren(...EXAMPLES.map(e=>button(e.question,()=>load(viewFor(e.question)),{
-    class:'chip-btn','data-question':e.question,'data-sample':e.sample||false,'data-saved':e.saved||false,'aria-pressed':String(e.question===state.view?.question)
-  })));
+  $('examples').replaceChildren(...[...EXAMPLES.slice(1),EXAMPLES[0]].map(e=>{
+    const node=button('',()=>openQuestion(viewFor(e.question)),{
+      class:'chip-btn topic-recommendation','data-question':e.question,'data-sample':e.sample||false,'data-saved':e.saved||false,'aria-pressed':String(e.question===state.view?.question)
+    });
+    node.append(el('span',{class:'topic-copy'},[el('strong',{text:e.question}),el('span',{text:EXAMPLE_DESCRIPTIONS[e.question]})]),el('img',{src:'/assets/icons/caret-right.svg',alt:'',width:18,height:18}));
+    return node;
+  }));
 }
 $('ask-form').addEventListener('submit',event=>{
   event.preventDefault();
@@ -1157,12 +1198,13 @@ $('ask-form').addEventListener('submit',event=>{
   try{question=normalizeQuestion($('q').value);}
   catch(error){$('ask-note').textContent=ui(error.message);$('q').focus();return;}
   const view=viewFor(question);
-  if(view.kind==='ask'&&!state.config?.askReady&&!isSaved(question)){$('ask-note').textContent=ui('实时检索暂未开放，可以先看看示例。');return;}
-  load(view);
+  openQuestion(view);
 });
+for(const button of document.querySelectorAll('[data-view-target]'))button.addEventListener('click',()=>setAppView(button.dataset.viewTarget));
+$('q').addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey&&!event.isComposing){event.preventDefault();$('ask-form').requestSubmit();}});
 $('brand-home')?.addEventListener('click',()=>setAppView('home'));
 $('enter-table')?.addEventListener('click',()=>setAppView('table'));
-$('enter-zhihu').addEventListener('click',()=>setAppView('zhihu'));
+$('enter-zhihu')?.addEventListener('click',()=>setAppView('zhihu'));
 $('go-table').addEventListener('click',()=>setAppView('table'));
 $('go-zhihu').addEventListener('click',()=>setAppView('zhihu'));
 for(const back of document.querySelectorAll('.back-home'))back.addEventListener('click',()=>setAppView('home'));
@@ -1172,6 +1214,7 @@ function renderLanguage({dynamic=true}={}){
   i18n.applyStatic();
   renderExamples();
   if(!dynamic)return;
+  updateSearchNote();
   if(session.get())render();
   if(!$('mine').hidden)renderMine();
   renderAccount({available:account.available,user:account.user},account.note,{refresh:false});
@@ -1182,12 +1225,15 @@ renderLanguage({dynamic:false});
 // ── 知乎登录：没配置凭据时不显示；OAuth token 只在服务端，浏览器只拿到昵称和头像 ──
 function renderAccount(me,note='',{refresh=true}={}){
   const box=$('account');
+  if(refresh){accountRevision++;state.advisor=freshAdvisor();state.tableThinking=false;state.tableReply='';state.tableQuestion='';}
   account.available=!!me?.available;
   account.user=me?.user||null;
   account.note=note;
   if(refresh)account.profile=null;
-  if(!account.user)localFacts.length=0;
+  if(!account.user){localFacts.length=0;Object.assign(mine,{items:null,error:'',relogin:false,checks:freshChecks()});inferState={running:false,note:'',relogin:false};}
+  renderMineWelcome();
   if(!me?.available){
+    $('mine').hidden=true;clear($('mine'));
     box.replaceChildren(el('button',{type:'button',class:'login-btn unavailable',text:'知乎登录',disabled:true,title:'当前演示环境暂未配置知乎授权'}));
     renderAdvisor();return;
   }
@@ -1196,8 +1242,11 @@ function renderAccount(me,note='',{refresh=true}={}){
     if(me.user.avatar)parts.push(el('img',{class:'avatar',src:me.user.avatar,alt:'',width:24,height:24,referrerpolicy:'no-referrer'}));
     parts.push(el('span',{class:'account-name',text:me.user.name,title:me.user.headline||false}));
     parts.push(button('退出',async()=>{
-      try{await fetch('/auth/logout',{method:'POST',headers:{'content-type':'application/json'}});}catch{}
-      renderAccount({available:true,user:null},'已退出。');
+      try{
+        const res=await fetch('/auth/logout',{method:'POST',headers:{'content-type':'application/json'},signal:AbortSignal.timeout(10000)});
+        if(!res.ok)throw new Error();
+        renderAccount({available:true,user:null},'已退出。');render();
+      }catch{renderAccount({available:true,user:account.user},'退出失败，请重试。',{refresh:false});}
     },{class:'link-btn'}));
   }else{
     parts.push(el('a',{class:'login-btn',href:'/auth/login',text:'知乎登录'}));
@@ -1209,20 +1258,35 @@ function renderAccount(me,note='',{refresh=true}={}){
   else renderAdvisor();
 }
 
+function renderMineWelcome(){
+  const welcome=$('mine-welcome');
+  welcome.hidden=!!account.user;
+  welcome.replaceChildren(el('div',{class:'account-welcome'},[
+    el('img',{src:'/assets/tone-hosts/rational.png',alt:'',width:104,height:104}),
+    el('h2',{text:'让积累，成为新的视角'}),
+    el('p',{class:'note',text:account.available?'登录知乎，查看你的收藏、创作与记住的情况。':'当前演示环境暂未配置知乎授权'}),
+    account.available?el('a',{class:'btn',href:'/auth/login',text:'用知乎登录'}):el('button',{class:'btn',disabled:true,text:'知乎登录'})
+  ]),el('div',{class:'mine-grid welcome-features'},[
+    ['收藏体检','检查收藏中的观点与评论区异议。'],['答主视角','回看自己的创作与读者反馈。'],['知镜记住的情况','管理你确认过的个人情况与选择。']
+  ].map(([title,copy])=>el('section',{class:'mine-block'},[el('h3',{text:title}),el('p',{class:'note',text:copy})]))));
+}
+
 // ── 登录后：我的知乎收藏（挑一个问题对比 + 收藏体检） ──
 // 两种体检：近期收藏（收藏体检）和本人发过的内容（答主视角），结果分开保存。
 const freshChecks=()=>({collections:{result:null,running:false,error:''},contents:{result:null,running:false,error:''}});
 const mine={items:null,error:'',relogin:false,checks:freshChecks()};
 async function loadMine(){
+  const revision=accountRevision;
   Object.assign(mine,{items:null,error:'',relogin:false,checks:freshChecks()});
   $('mine').hidden=false;
   $('mine').replaceChildren(el('p',{class:'note',text:'正在读取你最近的知乎收藏…'}));
   try{
     const res=await fetch('/api/my/collections',{signal:AbortSignal.timeout(20000)});
     const data=await res.json().catch(()=>({}));
+    if(revision!==accountRevision)return;
     if(res.ok)mine.items=data.items||[];
     else{mine.error=data.error||'暂时读不到你的收藏。';mine.relogin=!!data.relogin;}
-  }catch{mine.error='暂时读不到你的收藏。';}
+  }catch{if(revision!==accountRevision)return;mine.error='暂时读不到你的收藏。';}
   renderMine();
 }
 const reloginLink=()=>el('a',{href:'/auth/login',class:'link-btn',text:'重新登录'});
@@ -1231,7 +1295,7 @@ function checkupChip(item){
     const cond=onlyConditions(item.objections);
     return el('span',{class:'pb-chip'+(cond?' cond':''),text:cond?'有人补了前提':'有人不同意'});
   }
-  const label={incomplete:'分析未完成',quiet:'评论区没发现异议',no_comments:'没有取到评论',unmatched:'没找到这条的评论区',uncommented:'还没有人评论'}[item.status];
+  const label={search_failed:'检索未完成，可重试',incomplete:'分析未完成',quiet:'评论区没发现异议',no_comments:'没有取到评论',unmatched:'没找到这条的评论区',uncommented:'还没有人评论'}[item.status];
   return el('span',{class:'chip t-no_signal',text:label});
 }
 function checkupView(result,source){
@@ -1253,7 +1317,7 @@ function checkBlock(source,title,intro,label,enabled){
   const check=mine.checks[source];
   return el('section',{class:'mine-block'},[
     el('h3',{class:'mine-sub',text:title}),
-    check.result?checkupView(check.result,source):el('div',{class:'mine-check'},[
+    check.result?el('div',{},[checkupView(check.result,source),check.result.incomplete?button(check.running?'正在重试…':'重试未完成的体检',()=>runMineCheckup(source,true),{class:'btn small',disabled:check.running}):null]):el('div',{class:'mine-check'},[
       el('p',{class:'note',text:intro}),
       enabled?button(check.running?'正在体检…（30–60 秒）':label,()=>runMineCheckup(source),{class:'btn small',disabled:check.running}):null
     ]),
@@ -1270,7 +1334,7 @@ function renderMine(){
     el('h3',{class:'mine-sub',text:'从收藏里挑一个问题'}),
     items.length
       ?el('div',{class:'chips'},items.slice(0,6).map(item=>button(item.title.length>28?item.title.slice(0,28)+'…':item.title,()=>{
-        try{load(viewFor(normalizeQuestion(item.title.slice(0,80))));}catch(error){$('ask-note').textContent=error.message;}
+        try{openQuestion(viewFor(normalizeQuestion(item.title.slice(0,80))));}catch(error){$('ask-note').textContent=error.message;}
       },{class:'chip-btn',title:item.title})))
       :el('p',{class:'note',text:'最近的收藏里没有回答或文章。'})
   ]);
@@ -1280,15 +1344,18 @@ function renderMine(){
     checkBlock('contents','答主视角','看看你自己发过的回答、文章和想法，评论区有没有人当场不同意。','体检我发过的内容',true)
   ]),memoryBlock());
 }
-async function runMineCheckup(source){
+async function runMineCheckup(source,refresh=false){
+  const revision=accountRevision;
   const check=mine.checks[source];
+  if(check.running)return;
   check.running=true;check.error='';renderMine();
   try{
-    const res=await fetch('/api/my/checkup',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({source}),signal:AbortSignal.timeout(150000)});
+    const res=await fetch('/api/my/checkup',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({source,refresh}),signal:AbortSignal.timeout(150000)});
     const data=await res.json().catch(()=>({}));
+    if(revision!==accountRevision||mine.checks[source]!==check)return;
     if(res.ok)check.result=data;
     else{check.error=data.error||'体检没有完成，请稍后再试。';mine.relogin=!!data.relogin;}
-  }catch{check.error='体检没有完成，请稍后再试。';}
+  }catch{if(revision!==accountRevision||mine.checks[source]!==check)return;check.error='体检没有完成，请稍后再试。';}
   check.running=false;renderMine();
 }
 async function loadAccount(){
@@ -1296,7 +1363,7 @@ async function loadAccount(){
   const result=params.get('login');
   if(result){
     params.delete('login');
-    try{history.replaceState(null,'',location.pathname+(params.toString()?'?'+params:''));}catch{}
+    try{history.replaceState(null,'',location.pathname+(params.toString()?'?'+params:'')+location.hash);}catch{}
   }
   try{
     const res=await fetch('/api/me',{signal:AbortSignal.timeout(8000)});
@@ -1312,16 +1379,18 @@ async function boot(){
     if(!res.ok)throw new Error('配置读取失败');
     state.config=await res.json();
   }catch{
+    setAppView('zhihu',{sync:false});
     $('status').replaceChildren(el('p',{text:'暂时连不上服务，请稍后再试。'}),button('重新连接',boot,{class:'btn'}));
     return;
   }
-  if(!state.config.askReady)$('ask-note').textContent=ui('实时检索暂未开放，可以先看看示例。');
+  updateSearchNote();
   let initial=sampleView();
   const q=new URLSearchParams(location.search).get('q');
   if(q){
     try{const view=viewFor(normalizeQuestion(q));if(view.kind==='sample'||state.config.askReady||isSaved(view.question))initial=view;}catch{}
   }
   setAppView(viewFromLocation(),{sync:false});
-  load(initial);
+  await load(initial);
+  if(state.appView==='home'&&!q)$('q').value='';
 }
 boot();

@@ -71,7 +71,10 @@ async function searchPaced(queries,env,search,spacingMs){
     if(i)await sleep(spacingMs);
     try{settled.push({status:'fulfilled',value:await search(q,env)});}
     catch(error){
-      if(!error.rateLimited){settled.push({status:'rejected',reason:error});continue;}
+      if([401,403].includes(error.status)){
+        settled.push(...queries.slice(i).map(()=>({status:'rejected',reason:error})));break;
+      }
+      if(!error.rateLimited&&error.status!==429){settled.push({status:'rejected',reason:error});continue;}
       await sleep(spacingMs*2);
       try{settled.push({status:'fulfilled',value:await search(q,env)});}
       catch(retryError){settled.push({status:'rejected',reason:retryError});}

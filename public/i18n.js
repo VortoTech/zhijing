@@ -1,25 +1,46 @@
 const STATIC_COPY={
   zh:{
+    brandName:'知镜',navHome:'首页',navMine:'我的知乎',navigationLabel:'主导航',exampleBadge:'示例',personalKicker:'从你的积累，看到更多角度',personalIntro:'收藏、创作与个人情况，都在这里。',
     pageTitle:'知镜 · 把知乎的分歧摆上桌',
     pageDescription:'输入你正在纠结的选择，知镜把知乎上两边的真人原话并排摆出来，评论区里有人当场不同意的，也一起摆出来。每句都能核对，都署名答主。',
     heroAlt:'看山在左侧拿着望远镜观察不同观点',
-    homeEyebrow:'知乎观点体验空间',homeTitle:'看山啊',homeTagline:'撕开共识，看看真实的人正在怎样讨论同一个问题。',homeStart:'开始体验',homeProof:'真人原话　·　真实评论　·　真实分歧',
+    homeEyebrow:'知乎观点体验空间',homeTitle:'你正在纠结什么？',homeTagline:'把问题交给知镜，看看知乎上的人怎么说。',homeStart:'开始体验',homeProof:'真人原话 · 来源可核对 · 不替你做决定',
     tableViewLabel:'观点桌面',backHome:'←　返回',goZhihu:'查看知乎真实话题',
     zhihuViewLabel:'知乎真实话题与评论',goTable:'进入观点桌面',zhihuKicker:'知乎现场 · 真人原话',zhihuTitle:'看看知乎里，大家真的怎么说。',zhihuLede:'搜索一个话题，保留答主原话、赞数和评论区里的当场反驳。',
-    searchLabel:'搜索知乎观点话题',searchPlaceholder:'比如：考研还是直接工作',searchButton:'查看真实讨论',hotNow:'知乎此刻在热议：',examplesLabel:'示例问题',resultsLabel:'结果',dataSummary:'这些内容是怎么来的'
+    searchLabel:'搜索知乎观点话题',searchPlaceholder:'比如：第一份工作，选高薪小公司还是低薪大厂？',searchButton:'查看真实讨论',hotNow:'热门话题推荐',examplesLabel:'示例问题',resultsLabel:'结果',dataSummary:'这些内容是怎么来的'
   },
   en:{
+    brandName:'Zhijing',navHome:'Home',navMine:'My Zhihu',navigationLabel:'Main navigation',exampleBadge:'Examples',personalKicker:'A fresh perspective on what you save',personalIntro:'Your favorites, writing, and personal context — all in one place.',
     pageTitle:'Zhijing · Put Zhihu disagreements on the table',
     pageDescription:'Enter a choice you are weighing. Zhijing places real arguments from both sides next to each other, including direct pushback from the comments. Every quote is attributed and verifiable.',
     heroAlt:'Kanshan looks through binoculars at different points of view',
-    homeEyebrow:'A SPACE FOR REAL OPINIONS',homeTitle:'SEE BEYOND',homeTagline:'Tear open consensus and see how real people discuss the same question.',homeStart:'START',homeProof:'REAL VOICES · REAL COMMENTS · REAL DIFFERENCES',
+    homeEyebrow:'A SPACE FOR REAL OPINIONS',homeTitle:'What’s on your mind?',homeTagline:'Bring your question to Zhijing. See what people on Zhihu say.',homeStart:'START',homeProof:'Real voices · Checkable sources · Your decision',
     tableViewLabel:'Opinion Table',backHome:'←  Back',goZhihu:'View real Zhihu topics',
     zhihuViewLabel:'Real Zhihu topics and comments',goTable:'Enter the Opinion Table',zhihuKicker:'LIVE ON ZHIHU · REAL VOICES',zhihuTitle:'See what people on Zhihu actually say.',zhihuLede:'Search a topic and keep the authors\' exact words, upvotes, and direct challenges from the comments.',
-    searchLabel:'Search a topic on Zhihu',searchPlaceholder:'For example: postgraduate study or start working',searchButton:'View real discussion',hotNow:'Trending on Zhihu now:',examplesLabel:'Example topics',resultsLabel:'Results',dataSummary:'How this content was assembled'
+    searchLabel:'Search a topic on Zhihu',searchPlaceholder:'For example: postgraduate study or start working',searchButton:'View real discussion',hotNow:'Explore saved examples:',examplesLabel:'Example topics',resultsLabel:'Results',dataSummary:'How this content was assembled'
   }
 };
 
 const EN_EXACT=new Map(Object.entries({
+"继续深造，还是尽早进入职场？":"Keep studying, or enter the workplace?","在大城市发展，还是回家乡生活？":"Build a life in a major city, or return home?","更稳定的选择，还是更大的发展空间？":"More stability, or more room to grow?","高薪和成长，哪个更重要？":"Higher pay or growth \u2014 what matters more?","同一个问题，多种视角。选择一个看法，让它换个角度说。":"One question, many perspectives. Choose a voice to explore it.","不替你做决定，只提供多角度的分析。":"Different perspectives. The decision remains yours.","让积累，成为新的视角":"A new perspective on what you save","登录知乎，查看你的收藏、创作与记住的情况。":"Sign in to explore your favorites, writing, and saved context.","检查收藏中的观点与评论区异议。":"Check saved opinions and reader objections.","回看自己的创作与读者反馈。":"Review your writing and reader feedback.","管理你确认过的个人情况与选择。":"Manage your confirmed context and choices.",
+  '已保存的知乎原话 · 可核对来源':'Saved Zhihu quotes · Checkable sources',
+  '检索额度已用完，本次仅展示已取得的材料。':'The search budget is exhausted; only retrieved material is shown.',
+  '部分检索未完成，本次材料可能不完整，可以重试。':'Some searches failed. These results may be incomplete; you can retry.',
+"当前为示例模式，可阅读已保存的讨论；实时搜索尚未开放。":"Example mode: saved discussions are available; live search is not enabled.",
+"当前为示例模式，无法检索这个新问题。请选择下面的已保存示例。":"Example mode cannot search this new question. Choose a saved example below.",
+"当前未开启 AI 陪伴，无法生成本次回答。问题已保留；点击桌面原话可核对全文，或在知乎现场选择条件后阅读两边材料。":"AI advice is not enabled, so no answer was generated. Your question is saved in the input. Click a table quote to check its source, or select conditions to read both sides.",
+"当前为示例阅读，AI 陪伴尚未开启。点击桌面原话可核对来源。":"Example reading mode; AI advice is not enabled. Click a table quote to check its source.",
+"知镜正在结合当前原话和你的问题思考…":"Zhijing is reviewing your question against the current source quotes…",
+"已选择当前语气。输入问题后，知镜会结合当前话题的原话回答。":"Tone selected. Enter a question to get a response grounded in this topic’s source quotes.",
+"选择并核对原话":"Select and check source quote",
+"核对原话":"Check quote",
+"针对这句话":"About this quote",
+"针对这条回答":"About this answer",
+"检索未完成，可重试":"Search incomplete; retry available",
+"正在重试…":"Retrying…",
+"重试未完成的体检":"Retry incomplete check",
+"退出失败，请重试。":"Sign-out failed. Please try again.",
+"登录状态已变化，请重试。":"Your sign-in state changed. Please try again.",
   '多写几个字，比如「考研还是直接工作」。':'Please add a few more words, for example “postgraduate study or start working”.',
   '问题请控制在 80 字以内。':'Keep the question within 80 characters.',
   '正在读知乎上相关的回答和评论，通常要 20–40 秒。':'Reading relevant Zhihu answers and comments. This usually takes 20–40 seconds.',
@@ -29,7 +50,7 @@ const EN_EXACT=new Map(Object.entries({
   '当前浏览器暂不支持语音输入，可以直接打字。':'Voice input is not supported in this browser. You can type instead.','没有听清，可以再试一次或直接打字。':'I could not hear that clearly. Try again or type instead.','语音输入没有启动，请稍后再试。':'Voice input did not start. Please try again later.',
   '继续追问，比如：如果我更怕三年后后悔呢？':'Ask a follow-up, for example: what if I fear regretting this in three years?','继续追问':'Ask a follow-up','停止':'Stop','语音':'Voice','思考中':'Thinking','发送':'Send','正在听你说…':'Listening…','可打字，也可用语音输入 · Enter 发送':'Type or use voice · Press Enter to send',
   '8 个看山正在从不同角度想…':'Eight Kanshan characters are considering different angles…','观点桌面 · 问知镜':'OPINION TABLE · ASK ZHIJING','同一句话，换个角度听。':'Hear the same words from another angle.','选一个看山，让它换个语气说。':'Choose a Kanshan persona and hear it in a different voice.','AI 演绎，不替你做决定':'AI interpretation, never a decision made for you','评论 · 有人反驳':'COMMENT · DIRECT CHALLENGE','有人补了前提':'A reader added a condition','有人不同意':'A reader disagreed','评论区有读者补了前提':'A reader added a condition in the comments','评论区有读者当场不同意':'A reader challenged this in the comments','针对这句话':'Targets this quote','针对这条回答':'Targets the whole answer','读者评论原话':'Reader comment · exact words',
-  '知乎文章':'Zhihu article','知乎回答':'Zhihu answer','未知':'Unknown','关闭':'Close','关闭原帖':'Close source post','以下是知乎接口返回的正文（可能是摘要）。':'The text below was returned by the Zhihu API and may be an excerpt.','黄色是被引用的那一句，程序按编号从原文取出，一字未改。':'The cited sentence is highlighted in yellow. It was retrieved by index without changing a word.','被引用的是下面高亮的那条评论。':'The cited comment is highlighted below.','这条回答的精选评论':'Selected comments on this answer','这次没有取到这条回答的评论。':'No comments were returned for this answer.','去知乎看全文 · 给答主点赞':'Read the full post on Zhihu · Upvote the author','复制这句':'Copy this quote','已复制，可以在知乎页面里搜索定位。':'Copied. You can search for it on the Zhihu page.','没能复制，请手动选中上面的原话。':'Could not copy it. Select the quote above manually.',
+  '知乎文章':'Zhihu article','知乎回答':'Zhihu answer','未知':'Unknown','关闭':'Close','关闭原帖':'Close source post','以下是知乎接口返回的正文（可能是摘要）。':'The text below was returned by the Zhihu API and may be an excerpt.','高亮的是被引用的那一句，程序按编号从原文取出，一字未改。':'The cited sentence is highlighted. It was retrieved by index without changing a word.','被引用的是下面高亮的那条评论。':'The cited comment is highlighted below.','这条回答的精选评论':'Selected comments on this answer','这次没有取到这条回答的评论。':'No comments were returned for this answer.','去知乎看全文 · 给答主点赞':'Read the full post on Zhihu · Upvote the author','复制这句':'Copy this quote','已复制，可以在知乎页面里搜索定位。':'Copied. You can search for it on the Zhihu page.','没能复制，请手动选中上面的原话。':'Could not copy it. Select the quote above manually.',
   '看原帖':'View source','知乎 ↗':'Zhihu ↗','这句适合我吗？':'Does this apply to me?','答主自己交代的前提':'Condition stated by the author','这次没能整理出对比（模型请求失败）。':'The comparison could not be assembled because the model request failed.','这个问题不太像二选一，没法并排对比。换成「A 还是 B」的问法试试。':'This does not look like a two-option question. Try phrasing it as “A or B”.','这个示例还没有整理好的对比图。':'This example does not have a prepared comparison yet.','这次没从原话里整理出明确的对比，可以直接看下面的原始回答。':'No clear comparison could be assembled from the source quotes. You can still read the original answers below.','重新整理':'Build again','选':'Choose','他们怎么说':'What people say','这一边没找到理由。':'No supporting reason was found on this side.','收起':'Collapse','哪些情况更接近你':'Which situations are closer to yours','先挑几个更像你的情况':'Start with a few situations that resemble yours','点一下更接近你的那一边，拿不准就跳过。选好后，可以让知镜结合这些情况和原话帮你梳理。':'Choose the side closer to your situation, or skip it if unsure. Then Zhijing can help you review it against the source quotes.','你的情况同时牵动两边':'Your situation pulls in both directions','你选的情况分别出现在两边的原话里。先想想对你来说哪个条件更重要。':'The situations you chose appear in quotes from both sides. Consider which condition matters more to you.','结合这些情况问知镜':'Ask Zhijing using these situations','看两边的原话':'View quotes from both sides','看两边的原话（你选的那边已标出）':'View quotes from both sides (your choice is marked)','你选的 · ':'Your choice · ','展开完整对照与个人条件':'Open the full comparison and personal conditions',
   '这里暂时没有内容。':'Nothing is available here yet.','评论区的反驳由人工标注，并校验引文来源。':'Comment objections were manually labeled and their citations checked.','评论区的反驳由模型归类，并逐字校验引文来源。引文存在不代表归类一定正确。':'Comment objections were classified by the model and their citations checked word for word. A valid citation does not guarantee the classification is correct.','本次检索取得的有限样本。':'A limited sample from this search.',
   '回应的原句':'The sentence being addressed','查看这句话的上下文':'View this sentence in context','这条评论针对的是回答的前提，不是其中某一句。':'This comment challenges the answer\'s premise rather than a single sentence.','读者原话 · 逐字引用':'Reader\'s exact words','复制评论以便查找':'Copy comment for searching','已复制评论原话。':'Comment copied.','未能复制，请选中上方原话手动复制。':'Could not copy it. Select the comment above manually.','链接打开回答或文章，不会自动定位评论。可用上方原话在原站查找；精选评论不代表完整评论区。':'The link opens the answer or article but cannot jump directly to the comment. Search the source site using the quote above. Selected comments are not the full discussion.',
@@ -101,7 +122,7 @@ const EN_PATTERNS=[
   [/^原话里没有：(.+)$/,m=>`Not answered by the source quotes: ${m[1]}`],
   [/^我去知乎搜了「(.+)」。$/,m=>`I searched Zhihu for “${m[1]}”.`],
   [/^按你的 (\d+) 条情况，我在知乎找到 (\d+) 个处境和你相似的人：$/,m=>`Using ${m[1]} details from your situation, I found ${m[2]} people on Zhihu in similar circumstances:`],
-  [/^我在原来那批回答的评论里找到 (\d+) 个处境和你相似的人：$/,m=>`I found ${m[1]} people in similar circumstances in the comments under the original answers:`],
+  [/^我在已有回答和评论里找到 (\d+) 个处境和你相似的人：$/,m=>`I found ${m[1]} people in similar circumstances in the existing answers and comments:`],
   [/^检查了(.+) (\d+) 条内容：找到 (\d+) 条的评论区，其中 (\d+) 条有读者当场不同意或补了前提。$/,m=>`Checked ${translateEnglish(m[1])} (${m[2]} items): found comments for ${m[3]}, with direct objections or added conditions on ${m[4]}.`],
   [/^看看你最近收藏的 (\d+) 条内容，评论区有没有人当场不同意。$/,m=>`Review ${m[1]} recent favorites to see whether readers directly disagreed in the comments.`],
   [/^问知镜 · (.+)$/,m=>`Ask Zhijing · ${translateEnglish(m[1])}`],
