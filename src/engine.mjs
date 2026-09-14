@@ -47,6 +47,30 @@ export function deriveBoundary(objections = []) {
     .map(o => ({text: o.commentText, commentIndex: o.commentIndex}));
 }
 
+// 评论里出现了你选的条件，不等于说话人处在这个条件里。
+// 真实样本里的反例：「当然我这是社招，不是应届生。」——「应届生」只出现在否定句中，
+// 说话人讲的恰恰是「我不是」。按纯 includes 匹配会把它当成应届生的相关原话。
+// 这里只做一件很浅的事：切分句读，看紧挨着关键词前面的那几个字是不是否定标记，
+// 据此标出 polarity。这不是语义理解，也不下适用性结论——否定句照样展示原话，只是如实说明它是否定的。
+const NEGATION_MARKERS=['而不是','并不是','而非','并非','不是','不算','算不上','称不上','不属于','不同于','不再是','未必是','非'];
+const CLAUSE_SPLIT=/[，,。．；;！!？?、\n\r]/;
+
+export function mentionPolarity(text,term){
+  if(typeof text!=='string'||typeof term!=='string'||!term)return null;
+  let negated=false;
+  for(const clause of text.split(CLAUSE_SPLIT)){
+    for(let from=0;;){
+      const at=clause.indexOf(term,from);
+      if(at<0)break;
+      from=at+term.length;
+      // 只要这个词有一次是正面提及，整条评论就按正面处理——宁可让读者自己核对，也不误判成否定。
+      if(!NEGATION_MARKERS.some(marker=>clause.slice(0,at).endsWith(marker)))return 'affirmative';
+      negated=true;
+    }
+  }
+  return negated?'negated':null;
+}
+
 // 只检索已归类为条件补充的原话，不从作者认证或任意评论推断适用性。
 // 输出的是阅读线索；否定、不同主体及多条件混合时均不下适用性结论。
 export function situationFit(record,situation,topic){
@@ -60,13 +84,22 @@ export function situationFit(record,situation,topic){
       if(objection.type!=='adds_condition')continue;
       const original=record.comments[objection.commentIndex];
       if(original!==objection.commentText)continue;
-      if(!terms.some(term=>original.includes(term)))continue;
-      evidence.push({field:field.id,fieldLabel:field.label,myValue:value,
+      const matched=terms.filter(term=>original.includes(term));
+      if(!matched.length)continue;
+      const polarity=matched.some(term=>mentionPolarity(original,term)==='affirmative')?'affirmative':'negated';
+      evidence.push({field:field.id,fieldLabel:field.label,myValue:value,polarity,
         commentIndex:objection.commentIndex,text:original,
-        note:`评论 ${objection.commentIndex+1} 涉及「${field.label}」。请核对原话中的主体、否定和限制；提及不代表适合你。`});
+        note:polarity==='negated'
+          ?`评论 ${objection.commentIndex+1} 里「${field.label}」只出现在否定句中：说话人说的是自己「不${matched[0]==='非'?'':'是'}${matched[0]}」。这讲的是他自己的处境，提及不代表适合你。`
+          :`评论 ${objection.commentIndex+1} 涉及「${field.label}」。请核对原话中的主体、否定和限制；提及不代表适合你。`});
     }
   }
-  return evidence.length?{level:'reference',evidence,note:'相关条件原话，仅供对照，不判断适用性。'}:null;
+  if(!evidence.length)return null;
+  const affirmative=evidence.some(e=>e.polarity==='affirmative');
+  return {level:'reference',affirmative,evidence,
+    note:affirmative
+      ?'相关条件原话，仅供对照，不判断适用性。'
+      :'你选的条件在这些原话里只出现在否定句中（说话人说的是自己不是这种情况）。仅供对照，不判断适用性。'};
 }
 
 // 对比图里被引用的一句回答原话，同一条回答的评论区里读者的反驳或补充。
@@ -151,8 +184,11 @@ export function buildReadingMap(records,{topic,situation=null,order='as-is',cond
   const sorted=[...withAttention].sort((a,b)=>{
     if(order==='attention'&&a.attention!==b.attention)return a.attention-b.attention;
     if(order==='situation'){
+      // 有相关原话的排前面；同为相关时，正面提及排在「只出现在否定句里」的前面。
       const level=Number(!a.fit)-Number(!b.fit);
       if(level!==0)return level;
+      const polarity=Number(!a.fit?.affirmative)-Number(!b.fit?.affirmative);
+      if(polarity!==0)return polarity;
     }
     return (b.voteUp??0)-(a.voteUp??0);
   });
@@ -254,9 +290,15 @@ export function buildReadingMap(records,{topic,situation=null,order='as-is',cond
   return {
     topic:{...topic},
     meta,
-    situationCoverage:(topic.situationFields||[]).map(field=>({id:field.id,label:field.label,
-      selected:situation?.[field.id]||null,
-      count:annotated.filter(r=>r.fit?.evidence.some(e=>e.field===field.id)).length})),
+    situationCoverage:(topic.situationFields||[]).map(field=>{
+      const related=annotated.filter(r=>r.fit?.evidence.some(e=>e.field===field.id));
+      // count 只数正面提及；否定提及单独报出，避免「有 1 条相关」其实全是「我不是应届生」。
+      const affirmative=related.filter(r=>r.fit.evidence.some(e=>e.field===field.id&&e.polarity==='affirmative'));
+      return {id:field.id,label:field.label,
+        selected:situation?.[field.id]||null,
+        count:affirmative.length,
+        negatedOnly:related.length-affirmative.length};
+    }),
     order:ORDERS[order],
     conditions,
     situation:situation||null,

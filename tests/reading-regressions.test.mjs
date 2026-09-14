@@ -17,11 +17,25 @@ test('真实样本：不是应届生不再产生绿色匹配，保留评论主�
   assert.ok(situationFit(r,{stage:'社招 1-3 年'},topic));
 });
 
+test('真实样本：同一条评论对「应届生」是否定、对「社招」是正面',()=>{
+  const r=snapshot.records.find(r=>r.id==='2839573207696871495');
+  // 原话：「……当然我这是社招，不是应届生。」说话人是社招，不是应届生。
+  const asFresh=situationFit(r,{stage:'应届生'},topic);
+  assert.equal(asFresh.affirmative,false);
+  assert.equal(asFresh.evidence[0].polarity,'negated');
+  const asExperienced=situationFit(r,{stage:'社招 1-3 年'},topic);
+  assert.equal(asExperienced.affirmative,true);
+  assert.equal(asExperienced.evidence[0].polarity,'affirmative');
+});
+
 test('多条件逐项报告：经济压力能找到缺钱原话，城市明确零覆盖',()=>{
   const map=buildReadingMap(snapshot.records,{topic,situation:{stage:'应届生',city:'一线',burden:'要补贴家用'}});
   assert.equal(map.situationCoverage.find(c=>c.id==='city').count,0);
   assert.ok(map.situationCoverage.find(c=>c.id==='burden').count>0);
-  assert.ok(map.situationCoverage.find(c=>c.id==='stage').count>0);
+  // 样本里「应届生」唯一一次出现就在否定句中：正面覆盖为 0，但如实报出有 1 条否定提及。
+  const stage=map.situationCoverage.find(c=>c.id==='stage');
+  assert.equal(stage.count,0);
+  assert.equal(stage.negatedOnly,1);
   const r=map.records.find(r=>r.fit?.evidence.some(e=>e.field==='burden'));
   assert.match(r.fit.evidence.find(e=>e.field==='burden').text,/缺钱/);
 });

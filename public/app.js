@@ -642,6 +642,9 @@ function memoryBlock(){
 // 宽屏固定在右侧、窄屏从右侧滑出、手机全屏；收起后留右下角按钮。
 // 每次回复只说一句复述、最关键的两条判断和一个追问；反驳、缺口、补搜、下一步由用户点快捷回复展开（本地展开，不再调模型）。
 const QUICK_ASKS=['结合我的情况帮我梳理','反对的声音主要在说什么','我还需要先弄清楚什么'];
+// 条件的回答只是「是（如AI、金融）」「否」这类时，脱离问题看不懂：前面补上问题（与 src/peers.mjs situationValue 同一规则）。
+const situationText=(fork,branch)=>/^(是|否|有|没有|会|不会|能|不能|要|不要|对|不对)/.test(branch.when)||branch.when.length<=3
+  ?`${fork.label.replace(/[？?]\s*$/,'')}：${branch.when}`:branch.when;
 const PEER_ASK='帮我找和我情况像的人';
 const MAIN_POINTS=2;
 const turnSummary=reply=>[reply.understanding,reply.advice?.text,reply.nextQuestion?.text].filter(Boolean).join(' ').slice(0,400);
@@ -703,13 +706,14 @@ function askAboutQuote(e){
 // 冷启动：用对照板上的条件回答「你的情况」，本地记下，不调模型。
 function pickFromChat(forkIndex,branchIndex){
   const block=session.get()?.comparison;
-  const branch=block?.forks?.[forkIndex]?.branches?.[branchIndex];
+  const fork=block?.forks?.[forkIndex],branch=fork?.branches?.[branchIndex];
   if(!branch||state.advisor.pending)return;
+  const said=situationText(fork,branch);
   state.selectedForks={...state.selectedForks,[forkIndex]:branchIndex};
   const count=Object.keys(state.selectedForks).length;
   const more=count<3&&block.forks.some((_,i)=>state.selectedForks[i]==null);
-  state.advisor.turns.push({kind:'local',message:branch.when,action:true,text:more
-    ?`记下了「${branch.when}」。还有更像你的可以接着点；说完了，就让我对照原话帮你看。`
+  state.advisor.turns.push({kind:'local',message:said,action:true,text:more
+    ?`记下了「${said}」。还有更像你的可以接着点；说完了，就让我对照原话帮你看。`
     :`已经记下 ${count} 条情况了。我来对照原话帮你看看？`});
   render();
 }
@@ -851,7 +855,7 @@ function contextBar(block){
   const picks=Object.entries(state.selectedForks).map(([f,b])=>({f:Number(f),fork:block.forks[Number(f)],branch:block.forks[Number(f)]?.branches?.[b]})).filter(p=>p.branch);
   const chips=[
     ...picks.map(p=>el('span',{class:'sit-chip pick '+(p.branch.lean===B?'b':'a'),title:p.fork.label},[
-      el('span',{text:p.branch.when}),
+      el('span',{text:situationText(p.fork,p.branch)}),
       button('×',()=>{const next={...state.selectedForks};delete next[p.f];state.selectedForks=next;render();},{class:'sit-x','aria-label':'去掉「'+p.branch.when+'」',title:'去掉'})
     ])),
     ...confirmedFacts().map(factChip)
@@ -879,7 +883,7 @@ function quickReplies(block){
   }
   if(!src&&Object.keys(state.selectedForks).length<3){
     const open=block.forks.map((fork,i)=>({fork,i})).filter(({i})=>state.selectedForks[i]==null).slice(0,2);
-    if(open.length)rows.push([ready?'还可以补充':'你的情况更像',open.flatMap(({fork,i})=>fork.branches.map((b,j)=>button(b.when,()=>pickFromChat(i,j),{
+    if(open.length)rows.push([ready?'还可以补充':'你的情况更像',open.flatMap(({fork,i})=>fork.branches.map((b,j)=>button(situationText(fork,b),()=>pickFromChat(i,j),{
       class:'chip-btn situation-chip '+(b.lean===block.options[1]?'b':'a'),disabled:busy,title:fork.label
     })))]);
   }
