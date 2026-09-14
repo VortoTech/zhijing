@@ -391,6 +391,24 @@ body.drawer-open{overflow:hidden;}
 .sit-add input{flex:1;min-width:10em;}
 .sit-add select:focus-visible,.sit-add input:focus-visible,.composer textarea:focus-visible{outline:3px solid var(--a-soft);outline-offset:0;border-color:var(--a);}
 
+.sit-actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;}
+.sit-actions .note{margin:0;}
+
+/* 找同路人：处境相似的人自己的原话 */
+.peers{margin-top:16px;display:flex;flex-direction:column;gap:12px;}
+.peers-head .note{margin:2px 0 0;}
+.peers-title{margin:0;font-family:var(--serif);font-size:18px;font-weight:600;}
+.peer{padding:12px 16px 4px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--paper);}
+.peer-top{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;}
+.peer-top .note{margin:0;font-size:12.5px;}
+.peer-match{font-size:15px;font-weight:650;}
+.peer-lean{font-size:12px;font-weight:650;padding:0 9px;border-radius:999px;line-height:1.8;color:var(--a);background:var(--a-soft);border:1px solid var(--a-line);}
+.peer-lean.b{color:var(--b);background:var(--b-soft);border-color:var(--b-line);}
+.peer-quote{margin-top:8px;}
+.peer-quote blockquote + .peer-k{margin-top:8px;}
+.peer-quote blockquote + blockquote{margin-top:4px;}
+.peer-k{margin:0 0 2px 15px;font-size:12px;letter-spacing:.08em;color:var(--ink-3);}
+
 .turns{margin-top:18px;display:flex;flex-direction:column;gap:18px;}
 .turn{display:flex;flex-direction:column;gap:10px;}
 .turn-user{

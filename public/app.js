@@ -15,12 +15,13 @@ const MAX_FORKS=3;
 
 const session=createReadingSession();
 // activeReason 为 undefined 表示还没决定：宽屏默认展开第一条被评论区反驳的理由。
-const state={config:null,view:null,filter:'flagged',showAllForks:false,selectedForks:{},activeReason:undefined,openSources:new Set(),advisor:{turns:[],pending:false,draft:''}};
+const state={config:null,view:null,filter:'flagged',showAllForks:false,selectedForks:{},activeReason:undefined,openSources:new Set(),advisor:freshAdvisor()};
 // 登录账号与「知镜记住的情况」；没登录或没打开记住时，情况只存在这一页（localFacts）。
 const account={available:false,user:null,profile:null};
 const localFacts=[];
 let localSeq=0,boardById=new Map();
 const NO_PB={of:()=>[]};
+function freshAdvisor(){return {turns:[],pending:false,draft:'',peers:{running:false,result:null,error:''}};}
 let openCards=null,ticker=null;
 const $=id=>document.getElementById(id);
 function el(tag,props={},children=[]){
@@ -95,7 +96,7 @@ function markExamples(){
 
 async function load(view,refresh=false){
   state.view=view;state.filter='flagged';state.showAllForks=false;state.selectedForks={};state.activeReason=undefined;
-  state.openSources=new Set();state.advisor={turns:[],pending:false,draft:''};
+  state.openSources=new Set();state.advisor=freshAdvisor();
   $('q').value=view.question;$('ask-note').textContent='';
   syncUrl(view);markExamples();
   const live=view.kind==='ask';
@@ -744,6 +745,70 @@ function replyView(reply,latest){
   if(reply.personalized)parts.push(el('p',{class:'note',text:'这次参考了你记住的 '+reply.factsUsed+' 条情况。'}));
   return el('div',{class:'reply'},parts);
 }
+// ── 找同路人：处境和你相似的人，自己是怎么说、怎么选的 ──
+async function findPeersFor(){
+  const view=state.view,advisor=state.advisor;
+  if(!view||advisor.peers.running)return;
+  advisor.peers={running:true,result:null,error:''};
+  renderAdvisor();
+  const body={
+    ref:view.kind==='sample'?{kind:'sample',topicId:view.topicId}:{kind:'ask',question:view.question},
+    selections:Object.entries(state.selectedForks).map(([fork,branch])=>({fork:Number(fork),branch})),
+    facts:confirmedFacts().map(({key,value})=>({key,value}))
+  };
+  try{
+    const res=await fetch('/api/peers',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(120000)});
+    const data=await res.json().catch(()=>({}));
+    if(state.advisor!==advisor)return;
+    advisor.peers=res.ok?{running:false,result:data,error:''}:{running:false,result:null,error:data.error||'这次没找成，请稍后再试。',expired:!!data.expired};
+  }catch{
+    if(state.advisor!==advisor)return;
+    advisor.peers={running:false,result:null,error:'连接中断或等太久了，请重试。'};
+  }
+  renderAdvisor();
+  $('advisor').querySelector('.peers')?.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+function peerCard(peer,block){
+  const [,B]=block.options;
+  const src=peer.source;
+  const record=src.fromDataset?boardById.get(src.recordId):null;
+  const who=src.author||'匿名用户';
+  const caption=peer.kind==='comment'?`读者评论 · 在 ${who} 的回答下 · 《${src.title}》`:`${who} · ${src.voteUp??'—'} 赞 · 《${src.title}》`;
+  const open=event=>openPost({recordId:record.id,kind:peer.kind,commentIndex:src.commentIndex,text:peer.who},record,event.currentTarget);
+  return el('article',{class:'peer'},[
+    el('div',{class:'peer-top'},[
+      el('span',{class:'peer-match',text:peer.similar}),
+      peer.lean?el('span',{class:'peer-lean '+(peer.lean===B?'b':'a'),text:'倾向「'+peer.lean+'」'}):null,
+      el('span',{class:'note',text:'对应你的「'+peer.situation.value+'」 · 相似与倾向是 AI 判断'})
+    ]),
+    el('figure',{class:'evidence peer-quote'},[
+      el('p',{class:'peer-k',text:'自述处境'}),el('blockquote',{text:peer.who}),
+      ...(peer.said.length?[el('p',{class:'peer-k',text:'经历与选择'}),...peer.said.map(text=>el('blockquote',{text}))]:[]),
+      el('figcaption',{},[el('span',{text:caption}),record?button('看原帖',open,{class:'link-btn'}):null,sourceLink({url:src.url},'知乎 ↗')])
+    ])
+  ]);
+}
+function peersView(block){
+  const p=state.advisor.peers;
+  if(p.running)return el('section',{class:'peers'},[el('div',{class:'progress'},[
+    el('span',{class:'spinner','aria-hidden':'true'}),el('span',{text:'正在按你的情况去知乎找处境相似的人…通常 15–40 秒。'})
+  ])]);
+  if(p.error)return el('section',{class:'peers'},[el('p',{class:'note warn'},[p.error,' ',
+    p.expired?button('重新检索',()=>load(state.view,true),{class:'link-btn'}):button('重试',findPeersFor,{class:'link-btn'})])]);
+  if(!p.result)return null;
+  const r=p.result;
+  const how=(r.queries.length?`按你的 ${r.queries.length} 条情况去知乎找了 ${r.searched} 篇带亲身经历的回答，也翻了原来那批回答下的评论。`:'翻了原来那批回答下的评论。')
+    +'只收说话人讲自己经历的原话，引号里一字未改；原话里说清选了哪边的才标倾向。';
+  return el('section',{class:'peers','aria-labelledby':'peers-title'},[
+    el('header',{class:'peers-head'},[
+      el('h4',{id:'peers-title',class:'peers-title',text:r.peers.length?`和你情况像的 ${r.peers.length} 个人`:'这次没找到处境和你明显相似的人'}),
+      el('p',{class:'note',text:how}),
+      r.quota?el('p',{class:'note warn',text:'今天的检索次数用完了，这次只翻了原来的评论。'}):null,
+      !r.peers.length?el('p',{class:'note',text:'可以换一种说法补充情况（比如写具体城市、行业、家里能支持多久），再找一次。'}):null
+    ]),
+    ...r.peers.map(peer=>peerCard(peer,block))
+  ]);
+}
 function situationBlock(block){
   const [,B]=block.options;
   const picks=Object.entries(state.selectedForks).map(([f,b])=>({f:Number(f),fork:block.forks[Number(f)],branch:block.forks[Number(f)]?.branches?.[b]})).filter(p=>p.branch);
@@ -768,9 +833,15 @@ function situationBlock(block){
   else if(!account.user.canRemember)memory=el('p',{class:'note',text:'这些情况只用在这一页。没读到你的知乎资料，暂时不能记住。'});
   else if(account.profile&&!account.profile.personalize)memory=el('p',{class:'note'},['这些情况只用在这一页。',button('让知镜记住',()=>setPersonalize(true),{class:'link-btn'}),'（存进知镜的数据库，随时可删）']);
   else if(account.profile)memory=el('p',{class:'note',text:'已记住，下次登录还在。可以在上方「我的知乎」里查看和删除。'});
+  const count=confirmedFacts().length+picks.length,peers=state.advisor.peers;
+  const peerAction=el('div',{class:'sit-actions'},[
+    button(peers.running?'正在找…':'找和我情况像的人',findPeersFor,{class:'btn small',disabled:!count||peers.running}),
+    el('span',{class:'note',text:count?`用前 ${Math.min(count,3)} 条情况去知乎找处境相似的人，看看他们后来怎么选的`:'先补一条情况或选一个条件，再找和你情况像的人'})
+  ]);
   return el('section',{class:'situation','aria-labelledby':'sit-title'},[
     el('h4',{id:'sit-title',class:'sit-title',text:'知镜会参考的情况'}),
     chips.length?el('div',{class:'sit-chips'},chips):el('p',{class:'note',text:'还没有。在上面「哪些情况更接近你」点一下，或者在这里补一句。'}),
+    peerAction,
     ...allFacts().filter(f=>f.status==='pending').map(pendingRow),
     adder,memory,
     factNote?el('p',{class:'note warn',text:factNote}):null
@@ -815,7 +886,7 @@ function renderAdvisor(){
   };
   composer.addEventListener('submit',event=>{event.preventDefault();submit();});
   input.addEventListener('keydown',event=>{if(event.key==='Enter'&&(event.metaKey||event.ctrlKey)){event.preventDefault();submit();}});
-  box.replaceChildren(...[head,situationBlock(block),turns.length?el('div',{class:'turns'},turns):null,composer].filter(Boolean));
+  box.replaceChildren(...[head,situationBlock(block),peersView(block),turns.length?el('div',{class:'turns'},turns):null,composer].filter(Boolean));
 }
 
 $('examples').replaceChildren(...EXAMPLES.map(e=>button(e.question,()=>load(viewFor(e.question)),{

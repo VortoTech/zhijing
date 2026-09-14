@@ -12,6 +12,7 @@ import {createOAuth,parseCookies} from './oauth.mjs';
 import {fetchCollections,fetchContents,runCheckup,verifyUserApis} from './userdata.mjs';
 import {createStore} from './store.mjs';
 import {adviseTurn,inferProfile,FACT_KEYS} from './agent.mjs';
+import {findPeers,MAX_SITUATIONS} from './peers.mjs';
 
 const root=new URL('../',import.meta.url);
 const topics=await loadTopics();
@@ -149,6 +150,8 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
   const advise=dependencies.advise||adviseTurn;
   const infer=dependencies.inferProfile||inferProfile;
   const searchAgent=dependencies.search||searchOne;
+  const peersOf=dependencies.findPeers||findPeers;
+  const peerCache=new Map(); // 问题 + 情况 → {expires, pending}：同样的情况 15 分钟内复用
   const readCollections=dependencies.fetchCollections||fetchCollections;
   const readContents=dependencies.fetchContents||fetchContents;
   const checkup=dependencies.runCheckup||runCheckup;
@@ -241,16 +244,7 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
     const found=await resolveDataset(input.view);
     if(!found)return send(res,410,{expired:true,error:'这次检索的结果已经过期，重新检索后再问知镜。'});
     if(found.dataset.comparison?.status!=='complete')return send(res,422,{error:'这个问题没有整理出两边的对比，知镜没法结合原话帮你梳理。'});
-    // 打开了「记住我的情况」的登录用户，以数据库里确认过的情况为准；其余用户用页面上当次填写的情况。
-    const user=oauth.available?await oauth.current(cookies):null;
-    let facts=input.facts,personalized=false;
-    if(user?.userId){
-      const account=await store.getUser(user.userId).catch(()=>null);
-      if(account?.personalize){
-        facts=(await store.listFacts(user.userId)).filter(f=>f.status==='confirmed').slice(0,12).map(({key,value})=>({key,value}));
-        personalized=true;
-      }
-    }
+    const {user,facts,personalized}=await effectiveFacts(cookies,input.facts);
     if(inFlight>=4)return send(res,429,{error:'当前请求较多，请稍后再试。'});
     if(!adviceBudget.take())return send(res,429,{error:'今天的决策陪伴次数已用完，北京时间 0 点恢复。'});
     inFlight++;
@@ -275,6 +269,68 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
     }catch(error){
       log(JSON.stringify({event:'advice_failed',durationMs:Date.now()-started,reason:error.reason||'upstream'}));
       return send(res,503,{error:'知镜这次没能想完，请稍后再试。'});
+    }finally{inFlight--;}
+  }
+
+  // 打开了「记住我的情况」的登录用户，以数据库里确认过的情况为准；其余用户用页面上当次填写的情况。
+  async function effectiveFacts(cookies,clientFacts){
+    const user=oauth.available?await oauth.current(cookies):null;
+    if(!user?.userId)return {user,facts:clientFacts,personalized:false};
+    const account=await store.getUser(user.userId).catch(()=>null);
+    if(!account?.personalize)return {user,facts:clientFacts,personalized:false};
+    const facts=(await store.listFacts(user.userId)).filter(f=>f.status==='confirmed').slice(0,12).map(({key,value})=>({key,value}));
+    return {user,facts,personalized:true};
+  }
+
+  // 找同路人：按用户的情况（先用他说的，再用他选的条件，最多 3 条）去知乎找处境相似的人。
+  async function handlePeers(req,res,cookies){
+    let input;
+    try{input=validateAdvice(await readBody(req,16384));}
+    catch(error){return send(res,400,{error:error.message||'输入无效'});}
+    if(!adviceReady(env))return send(res,503,{error:'找同路人暂未开放。'});
+    const found=await resolveDataset(input.view);
+    if(!found)return send(res,410,{expired:true,error:'这次检索的结果已经过期，重新检索后再找。'});
+    const block=found.dataset.comparison;
+    if(block?.status!=='complete')return send(res,422,{error:'这个问题没有整理出两边的对比，没法找同路人。'});
+    const {facts}=await effectiveFacts(cookies,input.facts);
+    const situations=[
+      ...facts.map((f,i)=>({id:'f'+i,label:FACT_KEYS[f.key],value:f.value})),
+      ...input.selections.map(({fork,branch},i)=>{
+        const f=block.forks[fork],b=f?.branches?.[branch];
+        return b?{id:'c'+i,label:f.label,value:b.when}:null;
+      }).filter(Boolean)
+    ].slice(0,MAX_SITUATIONS);
+    if(!situations.length)return send(res,400,{error:'先补充一条你的情况，或者在上面选一个更接近你的条件。'});
+    const key=found.question+'\u0000'+situations.map(s=>s.value).join('\u0000');
+    const hit=peerCache.get(key);
+    if(hit&&Date.now()<hit.expires){
+      try{const {dropped,...body}=await hit.pending;return send(res,200,{...body,cached:true});}catch{}
+    }
+    if(inFlight>=4)return send(res,429,{error:'当前请求较多，请稍后再试。'});
+    if(!adviceBudget.take())return send(res,429,{error:'今天的次数已用完，北京时间 0 点恢复。'});
+    inFlight++;
+    const started=Date.now();
+    if(peerCache.size>200)for(const [k,v] of peerCache)if(v.expires<Date.now())peerCache.delete(k);
+    const search=configuration(env).zhihuReady?async query=>{
+      if(!liveBudget.take())throw Object.assign(new Error('今日实时检索次数已用完'),{quota:true});
+      return searchAgent(query,env);
+    }:null;
+    const entry={expires:Date.now()+15*60*1000};
+    entry.pending=(async()=>({...await peersOf({question:found.question,options:block.options,situations},found.dataset,env,{search}),situations}))();
+    peerCache.set(key,entry);
+    try{
+      const result=await entry.pending;
+      // 没找到人不缓存，用户可以换个说法或者马上再找一次。
+      if(!result.peers.length&&peerCache.get(key)===entry)peerCache.delete(key);
+      // 日志不记录用户情况与原话。
+      log(JSON.stringify({event:'peers',durationMs:Date.now()-started,situations:situations.length,queries:result.queries.length,searched:result.searched,
+        peers:result.peers.length,fromDataset:result.peers.filter(p=>p.source.fromDataset).length,failed:result.failed,quota:!!result.quota,dropped:result.dropped??0}));
+      const {dropped,...body}=result;
+      return send(res,200,body);
+    }catch(error){
+      if(peerCache.get(key)===entry)peerCache.delete(key);
+      log(JSON.stringify({event:'peers_failed',durationMs:Date.now()-started,reason:error.reason||'upstream'}));
+      return send(res,503,{error:'这次没找成，请稍后再试。'});
     }finally{inFlight--;}
   }
 
@@ -470,10 +526,11 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
       if(url.pathname==='/api/profile'||url.pathname.startsWith('/api/profile/')){
         return await handleProfile(req,res,url,parseCookies(req.headers.cookie));
       }
-      if(req.method==='POST'&&url.pathname==='/api/advice'){
+      if(req.method==='POST'&&(url.pathname==='/api/advice'||url.pathname==='/api/peers')){
         if(!sameOrigin(req))return send(res,403,{error:'请求来源不匹配'});
         if(!req.headers['content-type']?.startsWith('application/json'))return send(res,415,{error:'请发送 JSON 请求'});
-        return await handleAdvice(req,res,parseCookies(req.headers.cookie));
+        const cookies=parseCookies(req.headers.cookie);
+        return url.pathname==='/api/peers'?await handlePeers(req,res,cookies):await handleAdvice(req,res,cookies);
       }
       if(req.method==='POST'&&url.pathname==='/auth/logout'){
         if(req.headers.origin&&new URL(req.headers.origin).host!==req.headers.host)return send(res,403,{error:'请求来源不匹配'});
