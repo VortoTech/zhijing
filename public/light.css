@@ -316,3 +316,82 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,t
 .debate-chip{border-color:#F3C9B8;background:#FFF8F4;}
 .debate-chip:hover{border-color:#E7906B;color:#B4532A;}
 @media(max-width:760px){body[data-view="table"] .wrap{padding-bottom:calc(120px + env(safe-area-inset-bottom));}}
+
+/* ── 观点桌面：先看两边各自在意什么，再选「圆桌八方」或「辩论场」；右侧是一位可换性格的顾问 ── */
+.opinion-stage.desk{display:flex;flex-direction:column;gap:20px;}
+.desk-compare{padding:18px 20px;border:1px solid var(--line);border-radius:16px;background:#fff;}
+.desk-head h3{margin:0 0 4px;font-size:17px;}
+.desk-head .note{margin:0 0 14px;font-size:12px;}
+.desk-sides{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+.desk-side{min-width:0;padding:14px 16px;border-radius:12px;background:#F4F8FF;}
+.desk-side.b{background:#FFF8F2;}
+.desk-side-name{margin:0 0 8px;font:700 16px var(--sans);color:var(--a);}
+.desk-side.b .desk-side-name{color:#B4532A;}
+.desk-needs{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:0 0 10px;}
+.desk-k{font-size:11px;font-weight:650;letter-spacing:.04em;color:var(--ink-3);}
+.desk-need{padding:3px 9px;border:1px solid var(--line);border-radius:999px;background:#fff;font-size:12px;}
+.desk-reasons{display:grid;gap:10px;margin:0;padding-left:1.2em;}
+.desk-reason-top{display:flex;flex-wrap:wrap;align-items:center;gap:6px;}
+.desk-reason-top strong{font-size:14px;}
+.desk-quote{margin:4px 0 2px;padding-left:10px;border-left:2px solid var(--line-2);font-size:13px;line-height:1.7;color:var(--ink-2);}
+.desk-by{margin:0;font-size:11px;color:var(--ink-3);}
+.desk-modes{display:flex;align-self:flex-start;gap:6px;padding:4px;border-radius:14px;background:#F1F6FD;}
+.desk-mode{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:9px 18px;border:0;border-radius:10px;background:transparent;color:var(--ink-2);text-align:left;font:inherit;cursor:pointer;}
+.desk-mode strong{font-size:15px;}
+.desk-mode span{font-size:11px;color:var(--ink-3);}
+.desk-mode.current{background:#fff;box-shadow:0 2px 8px -4px #7397C8;}
+.desk-mode.current strong{color:var(--a);}
+.desk-body{display:flex;flex-direction:column;gap:14px;}
+.desk-guide{margin:0;font-size:12px;}
+.tone-seat.off .seat-mascot{opacity:.45;filter:grayscale(.6);}
+.table-center.desk-divergence{display:block;padding:16px 18px;border-radius:14px;background:#fff;text-align:center;box-shadow:0 8px 20px -12px #1A457A;}
+.desk-divergence-text{margin:6px 0 0;font:600 15px/1.7 var(--sans);color:var(--ink);}
+.rt-controls{display:flex;flex-direction:column;gap:10px;}
+.rt-customs{display:flex;flex-wrap:wrap;gap:6px;}
+.rt-custom{display:inline-flex;align-items:center;gap:4px;padding:4px 6px 4px 10px;border:1px dashed var(--line-2);border-radius:999px;background:#FAFCFF;font-size:12px;}
+.rt-custom-form,.rt-say-form{display:flex;flex-wrap:wrap;gap:8px;}
+.rt-custom-form input,.rt-say-form input{flex:1 1 180px;min-width:0;min-height:38px;padding:6px 12px;border:1px solid var(--line);border-radius:10px;font:14px var(--sans);}
+.rt-custom-form input#rt-role-name{flex:0 1 140px;}
+.rt-actions{display:flex;align-items:center;gap:12px;}
+.rt-log,.db-log{display:flex;flex-direction:column;gap:12px;}
+.rt-turn{display:flex;align-items:flex-start;gap:10px;}
+.rt-avatar{flex:none;width:40px;height:40px;border-radius:50%;background:#F1F6FD;object-fit:contain;}
+.rt-avatar.custom{display:grid;place-items:center;background:#7C63C9;color:#fff;font:700 16px var(--sans);}
+.rt-body{flex:1;min-width:0;padding:10px 14px;border:1px solid var(--line);border-radius:4px 14px 14px 14px;background:#F6F9FE;}
+.rt-who{margin:0 0 4px;font-size:12px;color:var(--ink-3);}
+.rt-who strong{font-size:13px;color:var(--ink);}
+.rt-text{margin:0;font-size:14px;line-height:1.75;}
+.rt-turn.user,.db-turn.user{align-self:flex-end;max-width:80%;padding:10px 14px;border-radius:14px 4px 14px 14px;background:var(--a);color:#fff;}
+.rt-turn.user p,.db-turn.user p{margin:0;color:#fff;}
+.rt-turn.user .rt-who,.db-turn.user .db-who{font-size:11px;opacity:.8;}
+.db-pick{padding:22px;border:1px solid var(--line);border-radius:16px;background:#fff;}
+.db-pick h4{margin:0 0 6px;font-size:17px;}
+.db-sides{display:flex;flex-wrap:wrap;gap:12px;margin-top:10px;}
+.btn.db-side.b{background:#B4532A;}
+.db-bar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;}
+.db-tag{padding:5px 12px;border-radius:999px;background:#E8F1FF;color:var(--a);font-size:13px;font-weight:650;}
+.db-tag.b{background:#FFF1E8;color:#B4532A;}
+.db-vs{font-weight:800;letter-spacing:.1em;color:var(--ink-3);}
+.db-turn.agent{max-width:88%;padding:12px 16px;border:1px solid #F3D9C8;border-radius:4px 14px 14px 14px;background:#FFF8F2;}
+.db-turn.agent .db-who{margin:0 0 6px;font-size:12px;font-weight:650;color:#B4532A;}
+.db-concede{margin:0 0 6px;font-size:12.5px;color:var(--ink-3);}
+.db-rebut{margin:0;font-size:14px;line-height:1.75;}
+.db-question{margin:8px 0 0;font-size:14px;font-weight:650;}
+.db-form{display:flex;align-items:flex-end;gap:10px;}
+.db-form textarea{flex:1;min-width:0;padding:10px 12px;border:1px solid var(--line-2);border-radius:12px;font:14px/1.6 var(--sans);resize:vertical;}
+.tone-picker{display:flex;flex-wrap:wrap;align-items:center;gap:4px;padding:8px 16px;border-bottom:1px solid var(--line);flex:none;}
+.tone-picker .ctx-k{margin-right:4px;}
+.tone-pick{display:grid;place-items:center;width:34px;height:34px;padding:0;border:1px solid transparent;border-radius:50%;background:#F4F8FF;cursor:pointer;}
+.tone-pick img{width:28px;height:28px;object-fit:contain;}
+.tone-pick.current{border-color:var(--a);background:#E3EEFF;}
+.qr-question{flex-basis:100%;margin:0 0 2px;font-size:13px;font-weight:650;color:var(--ink);}
+.skip-chip{color:var(--ink-3);}
+@media(max-width:760px){
+ .desk-sides{grid-template-columns:1fr;}
+ .desk-compare{padding:14px;}
+ .desk-modes{align-self:stretch;}
+ .desk-mode{flex:1;align-items:center;padding:8px 6px;text-align:center;}
+ .desk-mode span{display:none;}
+ .db-form{flex-direction:column;align-items:stretch;}
+ .rt-turn.user,.db-turn.user,.db-turn.agent{max-width:100%;}
+}

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {buildCatalog,verifyAdvice,adviseTurn,inferProfile} from '../src/agent.mjs';
+import {buildCatalog,verifyAdvice,adviseTurn,inferProfile,verifyRoundtable,verifyDebate,roundtableTurn,debateTurn} from '../src/agent.mjs';
 
 const comparison=JSON.parse(await readFile(new URL('../data/compare-first-job.json',import.meta.url),'utf8'));
 const snapshot=JSON.parse(await readFile(new URL('../data/snapshot-first-job.json',import.meta.url),'utf8'));
@@ -171,4 +171,45 @@ test('从收藏推测：只收有收藏标题支撑的、非敏感的推测，�
   assert.deepEqual(out.map(p=>[p.key,p.value]),[['stage','可能是应届生'],['priority','可能在考虑转行']]);
   assert.equal(out[1].evidenceRef,'收藏：《28 岁转行做产品来得及吗》');
   assert.deepEqual(await inferProfile([],env,{chat:async()=>assert.fail('没有收藏不调模型')}),[]);
+});
+
+test('圆桌：只收认识的角色和存在的编号，正文删编号、拦「你应该选」，回应对象换成角色名',()=>{
+  const roles=[{key:'r1',id:'rational',name:'理性分析'},{key:'r2',id:'custom',name:'我妈',stance:'希望我稳定'}];
+  const out=verifyRoundtable({turns:[
+    {role:'r1',text:'小公司的成长快（e1）但波动大',evidence:[idOf('小公司那个，可以写主导了'),'e999']},
+    {role:'r2',text:'稳定最重要，别折腾',evidence:[],replyTo:'r1'},
+    {role:'r9',text:'不存在的角色'},
+    {role:'r1',text:'综合来看你应该选大厂'}
+  ],divergence:'分歧在于看重成长还是稳定'},catalog,roles);
+  assert.deepEqual(out.turns.map(t=>t.role.name),['理性分析','我妈']);
+  assert.equal(out.turns[0].text,'小公司的成长快但波动大');
+  assert.equal(out.turns[0].refs.length,1,'不存在的编号丢掉');
+  assert.equal(out.turns[1].replyTo,'理性分析');
+  assert.equal(out.divergence,'分歧在于看重成长还是稳定');
+});
+
+test('圆桌：按角色编号发给模型，自定义角色标明是用户设定；结果带回原话',async()=>{
+  let seen=null;
+  const out=await roundtableTurn({question:'q',roles:[{id:'realist'},{id:'custom',name:'我妈',stance:'希望我稳定'}],history:[],message:''},dataset,env,{chat:async({user})=>{
+    seen=user;
+    return {turns:[{role:'r1',text:'先算清楚房租',evidence:[idOf('小公司那个，可以写主导了')]},{role:'r2',text:'稳定点好',replyTo:'r1'}],divergence:'看重钱还是稳'};
+  }});
+  assert.match(seen.roles[0],/^r1｜现实主义｜/);
+  assert.match(seen.roles[1],/^r2｜我妈｜希望我稳定（用户自定义的角色）$/);
+  assert.equal(out.turns[0].refs[0].ref,'evidence');
+  assert.equal(out.turns[1].replyTo,'现实主义');
+});
+
+test('辩论场：没有反驳就不算一轮；知镜站用户对面，带原话和追问',async()=>{
+  assert.equal(verifyDebate({concede:'有道理'},catalog),null);
+  let seen=null;
+  const out=await debateTurn({question:'q',side:0,message:'小公司成长快',history:[]},dataset,env,{chat:async({user})=>{
+    seen=user;
+    return {concede:'成长快确实成立',rebuttal:'但评论区有人指出小公司可能撑不过一年（p1）',evidence:[firstPushback],question:'如果公司倒了你怎么办？'};
+  }});
+  assert.equal(seen.user_side,comparison.options[0]);
+  assert.equal(seen.agent_side,comparison.options[1]);
+  assert.equal(out.rebuttal,'但评论区有人指出小公司可能撑不过一年');
+  assert.equal(out.refs[0].ref,'pushback');
+  assert.deepEqual(out.side,{user:comparison.options[0],agent:comparison.options[1]});
 });

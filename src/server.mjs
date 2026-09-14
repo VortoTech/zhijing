@@ -11,7 +11,7 @@ import {extractComparison} from './pipeline/compare.mjs';
 import {createOAuth,parseCookies} from './oauth.mjs';
 import {fetchCollections,fetchContents,runCheckup,verifyUserApis} from './userdata.mjs';
 import {createStore} from './store.mjs';
-import {adviseTurn,inferProfile,FACT_KEYS} from './agent.mjs';
+import {adviseTurn,inferProfile,roundtableTurn,debateTurn,FACT_KEYS,ROLE_PRESETS} from './agent.mjs';
 import {findPeers,MAX_SITUATIONS,situationValue} from './peers.mjs';
 import {dailyBudget} from './budget.mjs';
 
@@ -145,10 +145,25 @@ function validateAdvice(input){
     .filter(h=>h.text);
   const message=typeof input.message==='string'?input.message.trim():'';
   if(message.length>300)throw new Error('一次说的话请控制在 300 字以内。');
+  // 观点桌面的两种玩法走同一个接口（同一套限流与每日次数）：roundtable 要 2-5 位角色，debate 要选边。
+  const mode=input.mode==='roundtable'||input.mode==='debate'?input.mode:'advice';
+  let roles=[],side=null;
+  if(mode==='roundtable'){
+    roles=(Array.isArray(input.roles)?input.roles:[]).slice(0,5).map(r=>{
+      if(typeof r?.id==='string'&&Object.hasOwn(ROLE_PRESETS,r.id))return {id:r.id};
+      const name=typeof r?.name==='string'?r.name.trim():'',stance=typeof r?.stance==='string'?r.stance.trim():'';
+      return r?.id==='custom'&&name&&stance&&name.length<=10&&stance.length<=40?{id:'custom',name,stance}:null;
+    }).filter(Boolean);
+    if(roles.length<2)throw new Error('圆桌至少要两位角色。');
+  }
+  if(mode==='debate'){
+    if(input.side!==0&&input.side!==1)throw new Error('先选你站哪一边。');
+    side=input.side;
+  }
   const focus=input.focus;
   if(focus!=null&&(typeof focus.recordId!=='string'||!['answer','comment'].includes(focus.kind)||typeof focus.text!=='string'||focus.text.length>4000))throw new Error('原话格式不正确');
   return {view,selections,facts,history,message,tone:typeof input.tone==='string'?input.tone:'',language:input.language==='en'?'en':'zh',
-    focus:focus?{recordId:focus.recordId,kind:focus.kind,text:focus.text,commentIndex:focus.commentIndex??null}:null};
+    focus:focus?{recordId:focus.recordId,kind:focus.kind,text:focus.text,commentIndex:focus.commentIndex??null}:null,mode,roles,side};
 }
 const sameOrigin=req=>!req.headers.origin||new URL(req.headers.origin).host===req.headers.host;
 
@@ -162,6 +177,8 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
   const store=dependencies.store||createStore(env);
   const oauth=dependencies.oauth||createOAuth(env,{store});
   const advise=dependencies.advise||adviseTurn;
+  const roundtable=dependencies.roundtable||roundtableTurn;
+  const debateRound=dependencies.debate||debateTurn;
   const infer=dependencies.inferProfile||inferProfile;
   const searchAgent=dependencies.search||searchOne;
   const peersOf=dependencies.findPeers||findPeers;
@@ -264,6 +281,12 @@ export function createServer(env=process.env,dependencies={fetchTopic,classify})
     inFlight++;
     const started=Date.now();
     try{
+      if(input.mode!=='advice'){
+        const result=await (input.mode==='roundtable'?roundtable:debateRound)({...input,question:found.question},found.dataset,env);
+        // 日志不记录用户的话和角色设定。
+        log(JSON.stringify({event:input.mode,durationMs:Date.now()-started,roles:input.roles.length,turns:result.turns?.length??null,refs:result.refs?.length??null}));
+        return send(res,200,result);
+      }
       // 补充检索和实时检索共用每日次数。
       const search=configuration(env).zhihuReady?async query=>{
         if(!liveBudget.take())throw Object.assign(new Error('今日实时检索次数已用完'),{quota:true});
