@@ -286,7 +286,7 @@ const ROUNDTABLE_PROMPT=[
   '3. 不得编造数据、经历或原话里没有的事实；所有角色（包括用户自定义的角色）都不许编造具体的人和事（比如某个邻居、同学的遭遇），要举例就引用原话；不给胜率、概率；角色可以为某一边辩护，但不能替用户做决定，不说「你应该选」。',
   '4. history 是之前的发言，user_says 是用户这次插的话；有的话，这一轮先回应用户，再接着讨论。',
   '5. user_situation 是用户自己说过、确认过的情况（可能为空）。有的话，角色们要结合他的这些情况来谈，至少两条发言点名说到他的具体处境；不得编造他没说过的情况。',
-  '6. 最后写 divergence：一句话（不超过 60 字）说清这几位真正的分歧在哪（通常是看重的东西不同，或默认的前提不同）。',
+  '6. 最后写 divergence：一句话（不超过 60 字）说清这几位真正的分歧在哪（通常是看重的东西不同，或默认的前提不同）；提到谁就写角色名，不写 r1、r2 这类编号。',
   '只输出 JSON：{"turns":[{"role":"r1","text":"……","evidence":["e3"],"replyTo":null}],"divergence":"……"}'
 ].join('\n');
 
@@ -335,14 +335,16 @@ function situationLines(input,catalog){
 // roles：[{key:'r1',id,name,stance}]。只收认识的角色；回应对象换成角色名。
 export function verifyRoundtable(parsed,catalog,roles){
   const byKey=new Map(roles.map(r=>[r.key,r]));
+  // 模型有时拿角色编号（r1、r2）指人：换回角色名，页面上不出现编号。
+  const named=text=>text.replace(/\br(\d{1,2})\b/g,(match,digits)=>byKey.get('r'+digits)?.name||match);
   const turns=[];
   for(const turn of list(parsed?.turns)){
-    const role=byKey.get(turn?.role),raw=cleanText(turn?.text,120),text=raw&&dropAnecdotes(raw);
+    const role=byKey.get(turn?.role),raw=cleanText(turn?.text,120),text=raw&&dropAnecdotes(named(raw));
     if(!role||!text)continue;
     turns.push({role:{id:role.id,name:role.name},text,refs:refIds(turn.evidence,catalog,2),replyTo:byKey.get(turn.replyTo)?.name||null});
     if(turns.length>=8)break;
   }
-  return {turns,divergence:cleanText(parsed?.divergence,80)||''};
+  return {turns,divergence:named(cleanText(parsed?.divergence,80)||'')};
 }
 export async function roundtableTurn(input,dataset,env=process.env,{chat=chatJSON,request=getJSON,signal=AbortSignal.timeout(60000)}={}){
   const catalog=buildCatalog(dataset);

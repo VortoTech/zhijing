@@ -261,3 +261,10 @@ test('圆桌：角色不能对用户下指令，「你应优先考虑……」�
   ]},catalog,roles);
   assert.deepEqual(out.turns.map(t=>t.text),['根据你的情况，这一边的理由更贴近。']);
 });
+
+test('圆桌：模型拿角色编号指人（r1、r2）时换回角色名；r2d2 这类词不受影响',()=>{
+  const roles=[{key:'r1',id:'rational',name:'理性分析'},{key:'r2',id:'sharp',name:'犀利反问'}];
+  const out=verifyRoundtable({turns:[{role:'r2',text:'我不同意r1的说法，r2d2 也不同意',replyTo:'r1'}],divergence:'r1看重门槛，r2质疑门槛被高估，r9不存在'},catalog,roles);
+  assert.equal(out.divergence,'理性分析看重门槛，犀利反问质疑门槛被高估，r9不存在');
+  assert.equal(out.turns[0].text,'我不同意理性分析的说法，r2d2 也不同意');
+});
