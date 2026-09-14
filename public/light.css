@@ -308,3 +308,11 @@ button:focus-visible,a:focus-visible,summary:focus-visible,input:focus-visible,t
  .topic-takeaway{flex:none;min-height:40px;padding:6px 12px;font-size:12px;}
  .table-debate{display:grid;gap:6px;}
 }
+
+/* ── 观点桌面 = 和知镜聊的地方：右侧就是问知镜；「看两边」只读，右下角一个入口进来 ── */
+.opinion-stage{grid-template-columns:minmax(0,1fr);}
+.chat-launcher.to-desk{padding-right:16px;}
+.launcher-go{font-size:17px;margin-left:2px;}
+.debate-chip{border-color:#F3C9B8;background:#FFF8F4;}
+.debate-chip:hover{border-color:#E7906B;color:#B4532A;}
+@media(max-width:760px){body[data-view="table"] .wrap{padding-bottom:calc(120px + env(safe-area-inset-bottom));}}

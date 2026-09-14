@@ -250,55 +250,18 @@ function tableQuoteCard(option,e,byId,side){
   node.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();select();}});
   return node;
 }
-function askFromTable(activeQuote,message=state.tableDraft){
-  const question=message.trim();
-  if(!question){$('table-question')?.focus();return;}
-  if(state.advisor.pending)return;
-  state.tableQuestion=question;state.tableDraft=question;state.tableReply='';state.tableVoiceError='';
-  if(!state.config?.adviceReady){
-    state.tableThinking=false;
-    state.tableReply='当前未开启 AI 陪伴，无法生成本次回答。问题已保留；点击桌面原话可核对全文，或在知乎现场选择条件后阅读两边材料。';
-    render();return;
-  }
-  state.tableThinking=true;
-  askAdvisor(question,{inlineTable:true,quote:activeQuote});
+// 桌上当前选中的那句原话：观点桌面里跟知镜聊时，知镜优先围绕它回答。
+function activeTableQuote(){
+  const block=session.get()?.comparison;
+  if(block?.status!=='complete')return null;
+  return firstTableQuote(block,state.tableQuote==='b'?1:0)||firstTableQuote(block,0);
 }
 // 辩论：用户说出自己的倾向，知镜换成「反方挑战」的语气，只拿原话和评论区的反驳来挑战这个倾向，仍不替用户选。
-function debate(option,activeQuote){
+function debate(option){
   if(state.advisor.pending)return;
   state.tone='challenge';
-  askFromTable(activeQuote,`我现在更倾向「${option}」。请站在反方，用原话和评论区的反驳挑战我，帮我看清这个倾向站不站得住。`);
-}
-function startTableVoice(){
-  const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
-  if(!SpeechRecognition){state.tableVoiceError='当前浏览器暂不支持语音输入，可以直接打字。';render();return;}
-  if(state.tableListening&&speechRecognition){speechRecognition.stop();return;}
-  const recognition=new SpeechRecognition();
-  speechRecognition=recognition;recognition.lang=i18n.language==='en'?'en-US':'zh-CN';recognition.interimResults=true;recognition.continuous=false;
-  state.tableListening=true;state.tableVoiceError='';render();
-  recognition.onresult=event=>{
-    state.tableDraft=Array.from(event.results).map(result=>result[0].transcript).join('');
-    render();requestAnimationFrame(()=>$('table-question')?.focus());
-  };
-  recognition.onerror=()=>{state.tableVoiceError='没有听清，可以再试一次或直接打字。';};
-  recognition.onend=()=>{if(speechRecognition===recognition)speechRecognition=null;state.tableListening=false;render();requestAnimationFrame(()=>$('table-question')?.focus());};
-  try{recognition.start();}catch{state.tableListening=false;state.tableVoiceError='语音输入没有启动，请稍后再试。';render();}
-}
-function tableComposer(activeQuote){
-  const input=el('input',{id:'table-question',type:'text',maxlength:'300',autocomplete:'off',enterkeyhint:'send',placeholder:'继续追问，比如：如果我更怕三年后后悔呢？'});
-  input.value=state.tableDraft;
-  input.addEventListener('input',()=>{state.tableDraft=input.value;});
-  const form=el('form',{class:'table-composer'},[
-    el('label',{for:'table-question',class:'sr-only',text:'继续追问'}),
-    input,
-    (()=>{const voice=button('',startTableVoice,{class:'table-voice','aria-label':state.tableListening?'停止':'语音','aria-pressed':String(state.tableListening),disabled:state.advisor.pending});voice.append(el('img',{src:'/assets/icons/microphone.svg',alt:'',width:20,height:20}));return voice;})(),
-    el('button',{type:'submit',class:'table-send',disabled:state.advisor.pending,text:state.tableThinking?'思考中':'发送'})
-  ]);
-  form.addEventListener('submit',event=>{event.preventDefault();askFromTable(activeQuote,input.value);});
-  return el('div',{class:'table-ask'},[
-    form,
-    el('p',{class:'table-ask-hint',text:state.tableVoiceError||(state.tableListening?'正在听你说…':'可打字，也可用语音输入 · Enter 发送')})
-  ]);
+  openChat({focus:false});
+  askAdvisor(`我现在更倾向「${option}」。请站在反方，用原话和评论区的反驳挑战我，帮我看清这个倾向站不站得住。`);
 }
 function opinionStage(block,records){
   if(block?.status!=='complete'||!block.options?.length)return null;
@@ -308,8 +271,8 @@ function opinionStage(block,records){
   const objection=pushbackFor(byId.get(active?.recordId),active)[0]||null;
   const seats=TONE_PERSONAS.map((tone,index)=>{
     const selected=tone.id===state.tone;
-    const seat=el('button',{type:'button',class:'tone-seat seat-'+index+(selected?' selected':'')+(state.tableThinking?' thinking':''),'aria-pressed':String(selected),'data-tone':tone.id,disabled:state.advisor.pending,title:'用'+tone.label+'的方式说'},[
-      state.tableThinking?el('span',{class:'seat-thought','aria-hidden':'true'},[el('i'),el('i'),el('i')]):null,
+    const seat=el('button',{type:'button',class:'tone-seat seat-'+index+(selected?' selected':'')+(state.advisor.pending?' thinking':''),'aria-pressed':String(selected),'data-tone':tone.id,disabled:state.advisor.pending,title:'用'+tone.label+'的方式说'},[
+      state.advisor.pending?el('span',{class:'seat-thought','aria-hidden':'true'},[el('i'),el('i'),el('i')]):null,
       el('span',{class:'seat-visual','aria-hidden':'true'},[
         el('img',{class:'seat-chair',src:'/assets/table/chair.png',alt:'',width:'180',height:'180',loading:'lazy'}),
         el('img',{class:'seat-mascot',src:tone.asset,alt:'',width:'168',height:'168',loading:'lazy'})
@@ -319,12 +282,11 @@ function opinionStage(block,records){
     seat.addEventListener('click',()=>{state.tone=tone.id;state.tableReply='';state.tableQuestion='';render();requestAnimationFrame(()=>document.querySelector(`[data-tone="${tone.id}"]`)?.focus());});
     return seat;
   });
-  const speech=state.tableThinking?'知镜正在结合当前原话和你的问题思考…':state.tableReply||(state.config?.adviceReady?'已选择当前语气。输入问题后，知镜会结合当前话题的原话回答。':'当前为示例阅读，AI 陪伴尚未开启。点击桌面原话可核对来源。');
   return el('section',{class:'opinion-stage','aria-labelledby':'table-title'},[
     el('div',{class:'stage-heading'},[
       el('div',{},[
         el('h3',{id:'table-title',text:'同一句话，换个角度听。'}),
-        el('p',{text:'同一个问题，多种视角。选择一个看法，让它换个角度说。'})
+        el('p',{text:state.config?.adviceReady?'选一个角度，知镜就用这个语气和你聊；也可以让它当你的反方。':'当前为示例阅读，AI 陪伴尚未开启。点击桌面原话可核对来源。'})
       ]),
       el('p',{class:'stage-trust',text:state.config?.adviceReady?'AI 演绎，不替你做决定':'已保存的知乎原话 · 可核对来源'})
     ]),
@@ -339,21 +301,6 @@ function opinionStage(block,records){
         ]):null
       ]),
       ...seats
-    ]),
-    el('aside',{class:'table-conversation'},[
-    tableContext(),
-    el('div',{class:'table-response'+(state.tableThinking?' thinking':''),'aria-live':'polite'},[
-      el('img',{src:toneById(state.tone).asset,alt:'',width:'52',height:'52'}),
-      el('div',{},[
-        el('p',{class:'response-label',text:toneById(state.tone).label+' · 知镜'}),
-        state.tableQuestion?el('p',{class:'response-question',text:'你问：'+state.tableQuestion}):null,
-        el('p',{text:speech})
-      ])
-    ]),
-    el('div',{class:'table-followups'},[el('h4',{text:'也可以问'}),...QUICK_ASKS.map(question=>button(question,()=>{state.tableDraft=question;render();requestAnimationFrame(()=>$('table-question')?.focus());},{class:'followup-question',disabled:state.advisor.pending}))]),
-    el('div',{class:'table-debate'},[el('h4',{text:'辩一辩：说出你的倾向，知镜站到对面'}),...block.options.map(option=>button(`我倾向「${option}」，你当反方`,()=>debate(option,active),{class:'followup-question debate-question',disabled:state.advisor.pending}))]),
-    tableComposer(active),
-    el('p',{class:'conversation-trust',text:'不替你做决定，只提供多角度的分析。'})
     ]),
     button('补充我的条件',()=>{setAppView('zhihu');const board=document.querySelector('.full-board');if(board)board.open=true;$('forks-title')?.scrollIntoView({behavior:'smooth',block:'start'});},{class:'table-conditions'})
   ]);
@@ -879,6 +826,8 @@ const hasSituation=()=>confirmedFacts().length+Object.keys(state.selectedForks).
 const wideChat=()=>matchMedia('(min-width: 1200px)').matches;
 
 function openChat({focus=true}={}){
+  // 对话只在观点桌面里：从「看两边」任何地方点「问知镜」，都进观点桌面接着聊。
+  if(state.appView!=='table')setAppView('table');
   state.chatOpen=true;renderAdvisor();
   if(focus)requestAnimationFrame(()=>$('advisor-input')?.focus({preventScroll:true}));
 }
@@ -903,7 +852,7 @@ async function chatRequest(path,body,turn,onOk){
   advisor.pending=false;
   render();
 }
-async function askAdvisor(message,{inlineTable=false,quote=null}={}){
+async function askAdvisor(message,{quote=null}={}){
   const view=state.view,advisor=state.advisor;
   if(!view||advisor.pending||!state.config?.adviceReady||!message)return;
   const tone=toneById(state.tone);
@@ -911,15 +860,9 @@ async function askAdvisor(message,{inlineTable=false,quote=null}={}){
     .flatMap(t=>[{role:'user',text:t.message},t.reply?{role:'assistant',text:turnSummary(t.reply)}:null]).filter(Boolean);
   const displayMessage=ui(message);
   const turn={kind:'advice',message:displayMessage,reply:null,error:''};
-  await chatRequest('/api/advice',{ref:viewRef(view),selections:selectionsOf(),facts:factsOf(),history,message,tone:tone.id,language:i18n.language,focus:quote},turn,data=>{turn.reply=data;});
-  if(state.advisor!==advisor||state.view!==view)return;
-  if(inlineTable){
-    state.tableThinking=false;
-    state.tableReply=turn.reply?turnSummary(turn.reply):(turn.error||'知镜这次没能回复，请稍后再试。');
-    if(turn.reply&&state.tableDraft===message)state.tableDraft='';
-    if(turn.error)state.tableVoiceError=turn.error;
-    render();requestAnimationFrame(()=>$('table-question')?.focus());
-  }
+  // 在观点桌面上聊：没指定原话时，就围绕桌上选中的那一句。
+  const focus=quote||(state.appView==='table'?activeTableQuote():null);
+  await chatRequest('/api/advice',{ref:viewRef(view),selections:selectionsOf(),facts:factsOf(),history,message,tone:tone.id,language:i18n.language,focus},turn,data=>{turn.reply=data;});
 }
 function findPeersFor(){
   const view=state.view,advisor=state.advisor;
@@ -935,7 +878,7 @@ function retryLast(){
 function askAboutQuote(e){
   openChat({focus:false});
   const text=e.text.length>90?e.text.slice(0,90)+'…':e.text;
-  askAdvisor(i18n.language==='en'?`Does this quote apply to me: “${text}”?`:`「${text}」这句话适用于我吗？`);
+  askAdvisor(i18n.language==='en'?`Does this quote apply to me: “${text}”?`:`「${text}」这句话适用于我吗？`,{quote:e});
 }
 // 冷启动：用对照板上的条件回答「你的情况」，本地记下，不调模型。
 function pickFromChat(forkIndex,branchIndex){
@@ -1005,8 +948,8 @@ function errorMsg(turn,latest){
 function greetingMsg(block){
   const [A,B]=block.options;
   return botMsg([
-    el('p',{text:`我是知镜。你在「${A}」和「${B}」之间纠结，我不替你选，只帮你把左边的原话和你自己的情况对上。`}),
-    el('p',{text:'先说说你的情况吧：可以直接打字，也可以点下面更像你的选项。'})
+    el('p',{text:`我是知镜。你在「${A}」和「${B}」之间纠结，我不替你选，只帮你把知乎上的原话和你自己的情况对上。`}),
+    el('p',{text:'先说说你的情况吧：可以直接打字，也可以点下面更像你的选项。想换个角度，就点桌上的一只看山。'})
   ]);
 }
 function adviceMsg(reply,latest){
@@ -1130,6 +1073,7 @@ function quickReplies(block){
   if(src)more.unshift(button('带走这次梳理',()=>setAppView('summary'),{class:'chip-btn primary',disabled:busy}));
   more.push(button('找和我情况像的人',findPeersFor,{class:'chip-btn peer-chip',disabled:busy||!ready,title:ready?'按你的情况去知乎找处境相似的人':'先说一条你的情况'}));
   rows.push([src?'也可以问':'也可以',more]);
+  rows.push(['辩一辩',block.options.map(option=>button(`我倾向「${option}」，你当反方`,()=>debate(option),{class:'chip-btn debate-chip',disabled:busy}))]);
   return el('div',{class:'quick-replies',role:'group','aria-label':'快捷回复'},rows.map(([label,chips])=>el('div',{class:'qr-row'},[label?el('span',{class:'qr-k',text:label}):null,...chips])));
 }
 function composer(){
@@ -1160,9 +1104,19 @@ function composer(){
 function renderAdvisor(){
   const box=$('advisor'),launcher=$('chat-launcher');
   const block=session.get()?.comparison;
-  if(state.appView!=='zhihu'||block?.status!=='complete'||!block.options?.length||!state.config?.adviceReady){
+  const inTable=state.appView==='table',inBoard=state.appView==='zhihu';
+  if(!(inTable||inBoard)||block?.status!=='complete'||!block.options?.length||!state.config?.adviceReady){
     box.hidden=true;launcher.hidden=true;clear(box);document.body.classList.remove('chat-open');return;
   }
+  // 「看两边」只管读：不开对话，右下角留一个进观点桌面聊的入口。
+  if(inBoard){
+    box.hidden=true;clear(box);document.body.classList.remove('chat-open');
+    const rounds=adviceRounds();
+    launcher.hidden=false;launcher.classList.add('to-desk');
+    launcher.replaceChildren(toneAvatar('launcher-avatar'),el('span',{text:rounds?`回观点桌面接着聊（${rounds} 轮）`:'和知镜聊聊我的情况'}),el('span',{class:'launcher-go','aria-hidden':'true',text:'→'}));
+    return;
+  }
+  launcher.classList.remove('to-desk');
   if(state.chatOpen===undefined)state.chatOpen=wideChat();
   const open=!!state.chatOpen;
   launcher.hidden=open;box.hidden=!open;
@@ -1202,7 +1156,7 @@ function renderAdvisor(){
 // ── 当前话题：一个问题从头到尾是一条线：两边原话 → 换个角度听 → 我的结论 ──
 // 同一个话题的两种看法，在同一页上切换：知镜照出两边真实回答与评论；观点桌面把话题摆上桌深入讨论、辩论。
 // 「我的结论」不是第三种看法，是看完之后带走的出口。
-const TOPIC_MODES=[['zhihu','知镜 · 看两边','真实回答和评论，正反都在'],['table','观点桌面 · 深入讨论','追问、换角度，或让它当你的反方']];
+const TOPIC_MODES=[['zhihu','知镜 · 看两边','真实回答和评论，正反都在'],['table','观点桌面 · 和知镜聊','说你的情况、追问、辩一辩']];
 const topicQuestion=()=>{const d=session.get();return d?(d.meta?.question||d.topic?.title||''):'';};
 function topicBar(active){
   if(!session.get())return null;
@@ -1228,19 +1182,7 @@ function situationsList(){
   return [...picks,...confirmedFacts().map(f=>f.value)];
 }
 const adviceRounds=()=>state.advisor.turns.filter(t=>t.kind==='advice'&&t.reply).length;
-function openFullChat(){setAppView('zhihu');openChat();}
-// 观点桌面右侧：让人看得出这里和问知镜是同一段对话。
-function tableContext(){
-  const ctx=situationsList(),rounds=adviceRounds();
-  if(!ctx.length&&!rounds)return null;
-  return el('div',{class:'table-context'},[
-    ctx.length?el('div',{class:'table-context-chips'},[el('span',{class:'ctx-k',text:'知镜会参考'}),...ctx.map(text=>el('span',{class:'sit-chip',text}))]):null,
-    rounds?el('div',{class:'table-context-links'},[
-      button(`看完整对话（${rounds} 轮）`,openFullChat,{class:'link-btn'}),
-      button('带走这次梳理',()=>setAppView('summary'),{class:'link-btn'})
-    ]):null
-  ]);
-}
+function openFullChat(){openChat();}
 function renderResume(){
   const box=$('home-resume');
   if(!state.userTopic||!session.get()){box.hidden=true;clear(box);return;}
@@ -1302,7 +1244,7 @@ function renderSummary(){
     peers.length?sec('处境相似的人怎么说',peers.map(peerCard)):null,
     el('div',{class:'summary-actions'},[
       button('复制这份梳理',copy,{class:'btn'}),
-      button('回到两边原话继续聊',openFullChat,{class:'btn ghost'}),
+      button('回到观点桌面接着聊',openFullChat,{class:'btn ghost'}),
       button('换个问题',()=>setAppView('home'),{class:'link-btn'}),
       status
     ]),
