@@ -1,6 +1,11 @@
 import {buildReadingMap,pushbackFor} from '/engine.js';
 import {createReadingSession} from '/session.js';
 import {buildGuidance} from '/advisor.js';
+import {createI18n} from '/i18n.js';
+
+const i18n=createI18n();
+const ui=value=>i18n.text(value);
+const UI_ATTRIBUTES=new Set(['title','aria-label','placeholder']);
 
 // 示例问题都能秒开：第一个是人工标注的样本，其余是保存下来的实时结果（data/examples/）。
 const EXAMPLES=[
@@ -14,14 +19,14 @@ const isSaved=question=>EXAMPLES.some(e=>e.saved&&e.question===question);
 const MAX_FORKS=3;
 
 const TONE_PERSONAS=[
-  {id:'rational',label:'理性分析',asset:'/assets/tone-hosts/rational.png',prompt:'请用理性、克制、分点清晰的语气回应',preview:'把情绪先放一边：这句话只在你能承担波动时成立。'},
-  {id:'sharp',label:'犀利反问',asset:'/assets/tone-hosts/sharp.png',prompt:'请用犀利但不刻薄的反问语气回应',preview:'如果平台只给名头、不给成长，它凭什么就是更好的选择？'},
-  {id:'empathy',label:'温柔共情',asset:'/assets/tone-hosts/empathy.png',prompt:'请用温柔共情、先接住情绪的语气回应',preview:'你担心选错很正常，先确认哪一种后悔是你更能承受的。'},
-  {id:'humor',label:'幽默解构',asset:'/assets/tone-hosts/humor.png',prompt:'请用轻松幽默但不油滑的语气回应',preview:'高薪像过山车，低薪大厂像地铁：一个刺激，一个也可能坐过站。'},
-  {id:'realist',label:'现实主义',asset:'/assets/tone-hosts/realist.png',prompt:'请用务实、具体、重视约束条件的语气回应',preview:'先算三件事：现金流、岗位核心度，以及六个月后的可替代性。'},
-  {id:'longterm',label:'长期主义',asset:'/assets/tone-hosts/longterm.png',prompt:'请用长期主义、关注能力复利的语气回应',preview:'别只看第一年，把三年后的能力复利也一起放进来。'},
-  {id:'challenge',label:'反方挑战',asset:'/assets/tone-hosts/challenge.png',prompt:'请站在反方挑战我，但必须基于现有原话和评论区反驳',preview:'如果大厂只是更大的螺丝钉，所谓平台真的值得用成长速度去换吗？'},
-  {id:'socratic',label:'苏格拉底追问',asset:'/assets/tone-hosts/socratic.png',prompt:'请用苏格拉底式追问，不直接给结论',preview:'你说想要稳定——真正害怕的是收入波动，还是选择不被认可？'}
+  {id:'rational',label:'理性分析',asset:'/assets/tone-hosts/rational.png',prompt:'请用理性、克制、分点清晰的语气回应',promptEn:'Respond rationally and calmly, with clearly separated points.',preview:'把情绪先放一边：这句话只在你能承担波动时成立。'},
+  {id:'sharp',label:'犀利反问',asset:'/assets/tone-hosts/sharp.png',prompt:'请用犀利但不刻薄的反问语气回应',promptEn:'Respond with incisive but not hostile questions.',preview:'如果平台只给名头、不给成长，它凭什么就是更好的选择？'},
+  {id:'empathy',label:'温柔共情',asset:'/assets/tone-hosts/empathy.png',prompt:'请用温柔共情、先接住情绪的语气回应',promptEn:'Respond with gentle empathy and acknowledge the emotion first.',preview:'你担心选错很正常，先确认哪一种后悔是你更能承受的。'},
+  {id:'humor',label:'幽默解构',asset:'/assets/tone-hosts/humor.png',prompt:'请用轻松幽默但不油滑的语气回应',promptEn:'Respond with light, thoughtful humor without being glib.',preview:'高薪像过山车，低薪大厂像地铁：一个刺激，一个也可能坐过站。'},
+  {id:'realist',label:'现实主义',asset:'/assets/tone-hosts/realist.png',prompt:'请用务实、具体、重视约束条件的语气回应',promptEn:'Respond pragmatically and concretely, focusing on real constraints.',preview:'先算三件事：现金流、岗位核心度，以及六个月后的可替代性。'},
+  {id:'longterm',label:'长期主义',asset:'/assets/tone-hosts/longterm.png',prompt:'请用长期主义、关注能力复利的语气回应',promptEn:'Respond from a long-term perspective, focusing on compounding capabilities.',preview:'别只看第一年，把三年后的能力复利也一起放进来。'},
+  {id:'challenge',label:'反方挑战',asset:'/assets/tone-hosts/challenge.png',prompt:'请站在反方挑战我，但必须基于现有原话和评论区反驳',promptEn:'Challenge me from the opposing side, grounded only in the source quotes and comment objections.',preview:'如果大厂只是更大的螺丝钉，所谓平台真的值得用成长速度去换吗？'},
+  {id:'socratic',label:'苏格拉底追问',asset:'/assets/tone-hosts/socratic.png',prompt:'请用苏格拉底式追问，不直接给结论',promptEn:'Use Socratic questions and do not jump to a conclusion.',preview:'你说想要稳定——真正害怕的是收入波动，还是选择不被认可？'}
 ];
 const toneById=id=>TONE_PERSONAS.find(t=>t.id===id)||TONE_PERSONAS[6];
 
@@ -29,7 +34,7 @@ const session=createReadingSession();
 // activeReason 为 undefined 表示还没决定：宽屏默认展开第一条被评论区反驳的理由。
 const state={config:null,view:null,appView:'home',filter:'flagged',showAllForks:false,selectedForks:{},activeReason:undefined,openSources:new Set(),advisor:freshAdvisor(),chatOpen:false,tone:'challenge',tableQuote:'a',tableReply:'',tableDraft:'',tableQuestion:'',tableThinking:false,tableListening:false,tableVoiceError:''};
 // 登录账号与「知镜记住的情况」；没登录或没打开记住时，情况只存在这一页（localFacts）。
-const account={available:false,user:null,profile:null};
+const account={available:false,user:null,profile:null,note:''};
 const localFacts=[];
 let localSeq=0,boardById=new Map();
 const NO_PB={of:()=>[]};
@@ -39,11 +44,11 @@ const $=id=>document.getElementById(id);
 function el(tag,props={},children=[]){
   const node=document.createElement(tag);
   for(const [key,value] of Object.entries(props)){
-    if(key==='text')node.textContent=value;
+    if(key==='text')node.textContent=ui(value);
     else if(key==='class')node.className=value;
-    else if(value!==false&&value!=null)node.setAttribute(key,String(value));
+    else if(value!==false&&value!=null)node.setAttribute(key,String(UI_ATTRIBUTES.has(key)?ui(value):value));
   }
-  for(const child of children.flat())if(child!=null)node.append(typeof child==='string'?document.createTextNode(child):child);
+  for(const child of children.flat())if(child!=null)node.append(typeof child==='string'?document.createTextNode(ui(child)):child);
   return node;
 }
 const clear=node=>node.replaceChildren();
@@ -104,11 +109,11 @@ function showProgress(live){
     elapsed,
     button('取消',cancel,{class:'btn ghost small'})
   ]));
-  if(live)ticker=setInterval(()=>{elapsed.textContent='已等待 '+Math.round((Date.now()-started)/1000)+' 秒';},1000);
+  if(live)ticker=setInterval(()=>{elapsed.textContent=ui('已等待 '+Math.round((Date.now()-started)/1000)+' 秒');},1000);
 }
 function cancel(){
   session.cancel();stopTicker();setBusy(false);clearResults();
-  $('status').textContent='已取消。已经发出的分析可能还会在服务端跑完。';
+  $('status').textContent=ui('已取消。已经发出的分析可能还会在服务端跑完。');
 }
 function showError(message,{informational=false}={}){
   const actions=[];
@@ -225,7 +230,9 @@ function askFromTable(activeQuote,message=state.tableDraft){
   const quote=activeQuote?.text?.length>90?activeQuote.text.slice(0,90)+'…':activeQuote?.text||'我刚选中的这条观点';
   tableThinkTimer=setTimeout(()=>{
     tableThinkTimer=null;
-    if(state.config?.adviceReady)askAdvisor(`我继续追问：「${question}」请围绕「${quote}」并结合桌面两边原话回答。`,{inlineTable:true});
+    if(state.config?.adviceReady)askAdvisor(i18n.language==='en'
+      ?`My follow-up is: “${question}” Please answer around “${quote}” using the source quotes from both sides of the table.`
+      :`我继续追问：「${question}」请围绕「${quote}」并结合桌面两边原话回答。`,{inlineTable:true});
     else finishLocalTableReply();
   },1100);
 }
@@ -234,7 +241,7 @@ function startTableVoice(){
   if(!SpeechRecognition){state.tableVoiceError='当前浏览器暂不支持语音输入，可以直接打字。';render();return;}
   if(state.tableListening&&speechRecognition){speechRecognition.stop();return;}
   const recognition=new SpeechRecognition();
-  speechRecognition=recognition;recognition.lang='zh-CN';recognition.interimResults=true;recognition.continuous=false;
+  speechRecognition=recognition;recognition.lang=i18n.language==='en'?'en-US':'zh-CN';recognition.interimResults=true;recognition.continuous=false;
   state.tableListening=true;state.tableVoiceError='';render();
   recognition.onresult=event=>{
     state.tableDraft=Array.from(event.results).map(result=>result[0].transcript).join('');
@@ -288,7 +295,6 @@ function opinionStage(block,records){
   return el('section',{class:'opinion-stage','aria-labelledby':'table-title'},[
     el('div',{class:'stage-heading'},[
       el('div',{},[
-        el('p',{class:'stage-kicker',text:'观点桌面 · 问知镜'}),
         el('h3',{id:'table-title',text:'同一句话，换个角度听。'}),
         el('p',{text:'选一个看山，让它换个语气说。'})
       ]),
@@ -391,8 +397,8 @@ function openPost(e,record,trigger){
       el('footer',{class:'drawer-foot'},[
         zhihuAnchor(record,e,'去知乎看全文 · 给答主点赞','btn'),
         button('复制这句',async()=>{
-          try{await navigator.clipboard.writeText(e.text);copied.textContent='已复制，可以在知乎页面里搜索定位。';}
-          catch{copied.textContent='没能复制，请手动选中上面的原话。';}
+          try{await navigator.clipboard.writeText(e.text);copied.textContent=ui('已复制，可以在知乎页面里搜索定位。');}
+          catch{copied.textContent=ui('没能复制，请手动选中上面的原话。');}
         },{class:'btn ghost'}),
         copied
       ])
@@ -504,7 +510,7 @@ function comparisonSections(block,records,sample){
   if(block.forks.length){
     const shown=state.showAllForks?block.forks:block.forks.slice(0,MAX_FORKS);
     const rest=block.forks.length-shown.length;
-    const guidance=buildGuidance(block,state.selectedForks);
+    const guidance=buildGuidance(block,state.selectedForks,i18n.language);
     const selectBranch=(forkIndex,branchIndex)=>{
       const next={...state.selectedForks};
       if(next[forkIndex]===branchIndex)delete next[forkIndex];else next[forkIndex]=branchIndex;
@@ -579,8 +585,8 @@ function objectionBlock(o,record){
     el('div',{class:'row'},[
       sourceLink(record),
       button('复制评论以便查找',async()=>{
-        try{await navigator.clipboard.writeText(o.commentText);copied.textContent='已复制评论原话。';}
-        catch{copied.textContent='未能复制，请选中上方原话手动复制。';}
+        try{await navigator.clipboard.writeText(o.commentText);copied.textContent=ui('已复制评论原话。');}
+        catch{copied.textContent=ui('未能复制，请选中上方原话手动复制。');}
       },{class:'btn ghost'}),copied
     ]),
     el('p',{class:'note',text:'链接打开回答或文章，不会自动定位评论。可用上方原话在原站查找；精选评论不代表完整评论区。'})
@@ -618,7 +624,7 @@ function render(){
   const data=buildReadingMap(dataset.records,{topic:dataset.topic,meta:dataset.meta,order:'attention'});
   const sample=data.meta.mode==='snapshot';
   const saved=!!data.meta.saved;
-  const savedDay=saved?new Date(data.meta.savedAt).toLocaleDateString('zh-CN',{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric'}):'';
+  const savedDay=saved?new Date(data.meta.savedAt).toLocaleDateString(i18n.language==='en'?'en-US':'zh-CN',{timeZone:'Asia/Shanghai',month:'numeric',day:'numeric'}):'';
   const focused=data.records.filter(r=>r.focused),flagged=focused.filter(r=>r.objections.length);
   if(openCards===null)openCards=new Set();
   const incomplete=data.records.filter(r=>['failed','partial'].includes(r.analysis?.status));
@@ -651,7 +657,7 @@ function render(){
   const table=opinionStage(comparison,data.records);
   $('table-stage').replaceChildren(table||el('div',{class:'board-empty',text:'这个话题暂时还没有可以摆上桌的双边观点。'}));
 
-  $('sources-summary').textContent=`原始回答与评论区 · ${focused.length} 条`+(flagged.length?`（${flagged.length} 条被读者反驳）`:'');
+  $('sources-summary').textContent=ui(`原始回答与评论区 · ${focused.length} 条`+(flagged.length?`（${flagged.length} 条被读者反驳）`:''));
   $('sources-note').replaceChildren(
     el('p',{class:'note',text:'上面的原话都来自这些回答。'+(flagged.length?`被读者在评论区反驳或补充前提的排在前面（${sample?'人工标注':'模型挑出'}）。`:'')}),
     flagged.length?el('p',{class:'legend-line'},[
@@ -853,8 +859,11 @@ async function askAdvisor(message,{inlineTable=false}={}){
   const tone=toneById(state.tone);
   const history=advisor.turns.filter(t=>t.kind==='advice').slice(-3)
     .flatMap(t=>[{role:'user',text:t.message},t.reply?{role:'assistant',text:turnSummary(t.reply)}:null]).filter(Boolean);
-  const turn={kind:'advice',message,reply:null,error:''};
-  const styledMessage=`${tone.prompt}。保持知镜“不替用户做决定、只依据原话”的边界。\n${message}`;
+  const displayMessage=ui(message);
+  const turn={kind:'advice',message:displayMessage,reply:null,error:''};
+  const styledMessage=i18n.language==='en'
+    ?`${tone.promptEn} Reply in English. Keep Zhijing within its boundary: do not make the decision for the user and rely only on source quotes.\n${displayMessage}`
+    :`${tone.prompt}。保持知镜“不替用户做决定、只依据原话”的边界。\n${message}`;
   await chatRequest('/api/advice',{ref:viewRef(view),selections:selectionsOf(),facts:factsOf(),history,message:styledMessage,tone:tone.id},turn,data=>{turn.reply=data;});
   if(inlineTable){
     state.tableThinking=false;
@@ -866,7 +875,7 @@ async function askAdvisor(message,{inlineTable=false}={}){
 function findPeersFor(){
   const view=state.view,advisor=state.advisor;
   if(!view||advisor.pending||!state.config?.adviceReady||!hasSituation())return;
-  const turn={kind:'peers',message:PEER_ASK,result:null,error:''};
+  const turn={kind:'peers',message:ui(PEER_ASK),result:null,error:''};
   return chatRequest('/api/peers',{ref:viewRef(view),selections:selectionsOf(),facts:factsOf()},turn,data=>{turn.result=data;});
 }
 function retryLast(){
@@ -877,7 +886,7 @@ function retryLast(){
 function askAboutQuote(e){
   openChat({focus:false});
   const text=e.text.length>90?e.text.slice(0,90)+'…':e.text;
-  askAdvisor(`「${text}」这句话适用于我吗？`);
+  askAdvisor(i18n.language==='en'?`Does this quote apply to me: “${text}”?`:`「${text}」这句话适用于我吗？`);
 }
 // 冷启动：用对照板上的条件回答「你的情况」，本地记下，不调模型。
 function pickFromChat(forkIndex,branchIndex){
@@ -887,9 +896,9 @@ function pickFromChat(forkIndex,branchIndex){
   state.selectedForks={...state.selectedForks,[forkIndex]:branchIndex};
   const count=Object.keys(state.selectedForks).length;
   const more=count<3&&block.forks.some((_,i)=>state.selectedForks[i]==null);
-  state.advisor.turns.push({kind:'local',message:branch.when,action:true,text:more
-    ?`记下了「${branch.when}」。还有更像你的可以接着点；说完了，就让我对照原话帮你看。`
-    :`已经记下 ${count} 条情况了。我来对照原话帮你看看？`});
+  state.advisor.turns.push({kind:'local',message:branch.when,action:true,text:i18n.language==='en'
+    ?(more?`Saved “${branch.when}”. You can add more situations that resemble yours, then I can compare them with the source quotes.`:`You have saved ${count} details. Shall I review them against the source quotes?`)
+    :(more?`记下了「${branch.when}」。还有更像你的可以接着点；说完了，就让我对照原话帮你看。`:`已经记下 ${count} 条情况了。我来对照原话帮你看看？`)});
   render();
 }
 // 回复里收起的部分：用户点了才展开
@@ -1137,16 +1146,18 @@ function renderAdvisor(){
   }
 }
 
-$('examples').replaceChildren(...EXAMPLES.map(e=>button(e.question,()=>load(viewFor(e.question)),{
-  class:'chip-btn','data-question':e.question,'data-sample':e.sample||false,'data-saved':e.saved||false,'aria-pressed':'false'
-})));
+function renderExamples(){
+  $('examples').replaceChildren(...EXAMPLES.map(e=>button(e.question,()=>load(viewFor(e.question)),{
+    class:'chip-btn','data-question':e.question,'data-sample':e.sample||false,'data-saved':e.saved||false,'aria-pressed':String(e.question===state.view?.question)
+  })));
+}
 $('ask-form').addEventListener('submit',event=>{
   event.preventDefault();
   let question;
   try{question=normalizeQuestion($('q').value);}
-  catch(error){$('ask-note').textContent=error.message;$('q').focus();return;}
+  catch(error){$('ask-note').textContent=ui(error.message);$('q').focus();return;}
   const view=viewFor(question);
-  if(view.kind==='ask'&&!state.config?.askReady&&!isSaved(question)){$('ask-note').textContent='实时检索暂未开放，可以先看看示例。';return;}
+  if(view.kind==='ask'&&!state.config?.askReady&&!isSaved(question)){$('ask-note').textContent=ui('实时检索暂未开放，可以先看看示例。');return;}
   load(view);
 });
 $('brand-home')?.addEventListener('click',()=>setAppView('home'));
@@ -1157,32 +1168,24 @@ $('go-zhihu').addEventListener('click',()=>setAppView('zhihu'));
 for(const back of document.querySelectorAll('.back-home'))back.addEventListener('click',()=>setAppView('home'));
 window.addEventListener('popstate',()=>setAppView(viewFromLocation(),{sync:false}));
 
-const HOME_LANG={
-  zh:{eyebrow:'知乎观点体验空间',title:'看山啊',tagline:'撕开共识，看看真实的人正在怎样讨论同一个问题。',start:'开始体验',proof:'真人原话　·　真实评论　·　真实分歧',button:'中 / EN',label:'切换为英文'},
-  en:{eyebrow:'A SPACE FOR REAL OPINIONS',title:'SEE BEYOND',tagline:'Tear open consensus and see how real people discuss the same question.',start:'START',proof:'REAL VOICES · REAL COMMENTS · REAL DIFFERENCES',button:'EN / 中',label:'Switch to Chinese'}
-};
-let homeLanguage='zh';
-function renderHomeLanguage(){
-  const copy=HOME_LANG[homeLanguage];
-  $('home-eyebrow-text').textContent=copy.eyebrow;
-  $('home-title').textContent=copy.title;
-  $('home-tagline').textContent=copy.tagline;
-  $('home-start-label').textContent=copy.start;
-  $('home-proof-text').textContent=copy.proof;
-  $('language-toggle').textContent=copy.button;
-  $('language-toggle').setAttribute('aria-label',copy.label);
-  $('language-toggle').setAttribute('aria-pressed',String(homeLanguage==='en'));
-  document.documentElement.lang=homeLanguage==='en'?'en':'zh-CN';
+function renderLanguage({dynamic=true}={}){
+  i18n.applyStatic();
+  renderExamples();
+  if(!dynamic)return;
+  if(session.get())render();
+  if(!$('mine').hidden)renderMine();
+  renderAccount({available:account.available,user:account.user},account.note,{refresh:false});
 }
-$('language-toggle').addEventListener('click',()=>{homeLanguage=homeLanguage==='zh'?'en':'zh';renderHomeLanguage();});
-renderHomeLanguage();
+$('language-toggle').addEventListener('click',()=>{i18n.toggle();renderLanguage();});
+renderLanguage({dynamic:false});
 
 // ── 知乎登录：没配置凭据时不显示；OAuth token 只在服务端，浏览器只拿到昵称和头像 ──
-function renderAccount(me,note=''){
+function renderAccount(me,note='',{refresh=true}={}){
   const box=$('account');
   account.available=!!me?.available;
   account.user=me?.user||null;
-  account.profile=null;
+  account.note=note;
+  if(refresh)account.profile=null;
   if(!account.user)localFacts.length=0;
   if(!me?.available){
     box.replaceChildren(el('button',{type:'button',class:'login-btn unavailable',text:'知乎登录',disabled:true,title:'当前演示环境暂未配置知乎授权'}));
@@ -1201,8 +1204,9 @@ function renderAccount(me,note=''){
   }
   if(note)parts.unshift(el('span',{class:'account-note',text:note}));
   box.replaceChildren(...parts);
-  if(me.user){loadMine();loadProfile();}
-  else{$('mine').hidden=true;clear($('mine'));renderAdvisor();}
+  if(me.user&&refresh){loadMine();loadProfile();}
+  else if(!me.user){$('mine').hidden=true;clear($('mine'));renderAdvisor();}
+  else renderAdvisor();
 }
 
 // ── 登录后：我的知乎收藏（挑一个问题对比 + 收藏体检） ──
@@ -1311,7 +1315,7 @@ async function boot(){
     $('status').replaceChildren(el('p',{text:'暂时连不上服务，请稍后再试。'}),button('重新连接',boot,{class:'btn'}));
     return;
   }
-  if(!state.config.askReady)$('ask-note').textContent='实时检索暂未开放，可以先看看示例。';
+  if(!state.config.askReady)$('ask-note').textContent=ui('实时检索暂未开放，可以先看看示例。');
   let initial=sampleView();
   const q=new URLSearchParams(location.search).get('q');
   if(q){

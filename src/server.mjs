@@ -20,6 +20,7 @@ const topics=await loadTopics();
 const FILES={
   '/':['public/index.html','text/html; charset=utf-8'],
   '/app.js':['public/app.js','text/javascript; charset=utf-8'],
+  '/i18n.js':['public/i18n.js','text/javascript; charset=utf-8'],
   '/advisor.js':['public/advisor.js','text/javascript; charset=utf-8'],
   '/engine.js':['src/engine.mjs','text/javascript; charset=utf-8'],
   '/session.js':['public/session.js','text/javascript; charset=utf-8'],

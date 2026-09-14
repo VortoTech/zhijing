@@ -18,52 +18,52 @@
   </header>
 
   <section id="home-view" class="home-view" aria-labelledby="home-title">
-    <img class="home-hero-art" src="/assets/home/hero-telescope-v1.png?v=20260914-white6" alt="看山在左侧拿着望远镜观察不同观点">
+    <img class="home-hero-art" src="/assets/home/hero-telescope-v1.png?v=20260914-white6" alt="看山在左侧拿着望远镜观察不同观点" data-i18n-alt="heroAlt">
     <div class="home-hero-shade" aria-hidden="true"></div>
     <div class="home-copy">
-      <p class="home-eyebrow"><span></span><b id="home-eyebrow-text">知乎观点体验空间</b></p>
-      <h1 id="home-title">看山啊</h1>
-      <p id="home-tagline" class="home-tagline">撕开共识，看看真实的人正在怎样讨论同一个问题。</p>
+      <p class="home-eyebrow"><span></span><b id="home-eyebrow-text" data-i18n="homeEyebrow">知乎观点体验空间</b></p>
+      <h1 id="home-title" data-i18n="homeTitle">看山啊</h1>
+      <p id="home-tagline" class="home-tagline" data-i18n="homeTagline">撕开共识，看看真实的人正在怎样讨论同一个问题。</p>
       <button id="enter-zhihu" class="home-start" type="button">
-        <span id="home-start-label">开始体验</span><span class="home-start-arrow" aria-hidden="true">↗</span>
+        <span id="home-start-label" data-i18n="homeStart">开始体验</span><span class="home-start-arrow" aria-hidden="true">↗</span>
       </button>
     </div>
-    <p class="home-proof"><span>ZH</span><b id="home-proof-text">真人原话　·　真实评论　·　真实分歧</b></p>
+    <p class="home-proof"><span>ZH</span><b id="home-proof-text" data-i18n="homeProof">真人原话　·　真实评论　·　真实分歧</b></p>
   </section>
 
-  <section id="table-view" class="product-view" hidden aria-label="观点桌面">
+  <section id="table-view" class="product-view" hidden aria-label="观点桌面" data-i18n-aria="tableViewLabel">
     <div class="view-bar">
-      <button class="back-home" type="button">←　两个入口</button>
-      <button id="go-zhihu" class="switch-view" type="button">查看知乎真实话题</button>
+      <button class="back-home" type="button" data-i18n="backHome">←　返回</button>
+      <button id="go-zhihu" class="switch-view" type="button" data-i18n="goZhihu">查看知乎真实话题</button>
     </div>
     <div id="table-result-head" class="table-topic-head"></div>
     <div id="table-stage"></div>
   </section>
 
-  <section id="zhihu-view" class="product-view" hidden aria-label="知乎真实话题与评论">
+  <section id="zhihu-view" class="product-view" hidden aria-label="知乎真实话题与评论" data-i18n-aria="zhihuViewLabel">
     <div class="view-bar">
-      <button class="back-home" type="button">←　两个入口</button>
-      <button id="go-table" class="switch-view" type="button">进入观点桌面</button>
+      <button class="back-home" type="button" data-i18n="backHome">←　返回</button>
+      <button id="go-table" class="switch-view" type="button" data-i18n="goTable">进入观点桌面</button>
     </div>
     <header class="hero zhihu-hero">
-      <p class="hero-kicker">知乎现场 · 真人原话</p>
-      <h1>看看知乎里，大家真的怎么说。</h1>
-      <p class="lede">搜索一个话题，保留答主原话、赞数和评论区里的当场反驳。</p>
+      <p class="hero-kicker" data-i18n="zhihuKicker">知乎现场 · 真人原话</p>
+      <h1 data-i18n="zhihuTitle">看看知乎里，大家真的怎么说。</h1>
+      <p class="lede" data-i18n="zhihuLede">搜索一个话题，保留答主原话、赞数和评论区里的当场反驳。</p>
       <form id="ask-form" class="ask" role="search" novalidate>
-        <label for="q" class="sr-only">搜索知乎观点话题</label>
-        <input id="q" name="q" type="search" maxlength="80" autocomplete="off" enterkeyhint="search" placeholder="比如：考研还是直接工作">
-        <button id="ask-btn" class="btn big" type="submit">查看真实讨论</button>
+        <label for="q" class="sr-only" data-i18n="searchLabel">搜索知乎观点话题</label>
+        <input id="q" name="q" type="search" maxlength="80" autocomplete="off" enterkeyhint="search" placeholder="比如：考研还是直接工作" data-i18n-placeholder="searchPlaceholder">
+        <button id="ask-btn" class="btn big" type="submit" data-i18n="searchButton">查看真实讨论</button>
       </form>
       <p id="ask-note" class="note" aria-live="polite"></p>
       <div class="examples">
-        <span class="note">知乎此刻在热议：</span>
-        <div id="examples" class="chips" role="group" aria-label="示例问题"></div>
+        <span class="note" data-i18n="hotNow">知乎此刻在热议：</span>
+        <div id="examples" class="chips" role="group" aria-label="示例问题" data-i18n-aria="examplesLabel"></div>
       </div>
     </header>
     <section id="mine" class="mine" hidden aria-labelledby="mine-title"></section>
     <div id="error-slot" role="alert"></div>
     <div id="status" role="status" aria-live="polite"></div>
-    <section id="results" aria-label="结果" aria-busy="false">
+    <section id="results" aria-label="结果" aria-busy="false" data-i18n-aria="resultsLabel">
       <div id="result-head"></div>
       <div id="compare"></div>
       <details id="sources" class="sources" hidden>
@@ -74,7 +74,7 @@
       </details>
     </section>
     <details id="data-details" class="data-details" hidden>
-      <summary>这些内容是怎么来的</summary>
+      <summary data-i18n="dataSummary">这些内容是怎么来的</summary>
       <div id="source-note"></div><div id="diag-slot"></div>
     </details>
   </section>
@@ -82,6 +82,6 @@
 <aside id="advisor" class="advisor" hidden aria-labelledby="advisor-title"></aside>
 <button id="chat-launcher" class="chat-launcher" type="button" hidden></button>
 <div id="post-drawer" class="drawer" hidden></div>
-<script type="module" src="/app.js?v=20260914-white7"></script>
+<script type="module" src="/app.js?v=20260914-i18n1"></script>
 </body>
 </html>
